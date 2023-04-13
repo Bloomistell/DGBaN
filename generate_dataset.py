@@ -138,29 +138,64 @@ class randomized_ring_dataset():
             sig
         )
 
-    def prob_distr(self, nb_samples=10000, centers=None, means=None, sigs=None, nrgs=None):
-        returns = ()
+    def prob_distr(self, pmts=None, centers=None, means=None, sigs=None, nrgs=None):
+        variables = ()
+        parameters = ()
+        if pmts is None:
+            pmts = np.array([self.centers[np.random.choice(self.N2)]])
+            parameters += (pmts[0],)
+        elif pmts.shape[0] > 1:
+            variables += (pmts,)
+        else:
+            parameters += (pmts[0],)
+
         if centers is None:
-            centers = [self.centers[np.random.choice(self.N2)]]
-            returns += (centers[0],)
+            centers = np.array([self.centers[np.random.choice(self.N2)]])
+            parameters += (centers[0],)
+        elif centers.shape[0] > 1:
+            variables += (centers,)
+        else:
+            parameters += (centers[0],)
 
         if means is None:
-            means = [np.random.choice(self.means)]
-            returns += (means[0],)
+            means = np.array([np.random.choice(self.means)])
+            parameters += (means[0],)
+        elif len(means) > 1:
+            variables += (means,)
+        else:
+            parameters += (means[0],)
             
         if sigs is None:
-            sigs = [np.random.choice(self.sigs)]]
-            returns += (sigs[0],)
+            sigs = np.array([np.random.choice(self.sigs)])
+            parameters += (sigs[0],)
+        elif len(sigs) > 1:
+            variables += (sigs,)
+        else:
+            parameters += (sigs[0],)
             
         if nrgs is None:
-            nrgs = [np.random.choice(self.nrgs)]]
-            returns += (nrgs[0],)
+            nrgs = np.array([np.random.choice(self.nrgs)])
+            parameters += (nrgs[0],)
+        elif len(nrgs) > 1:
+            variables += (nrgs,)
+        else:
+            parameters += (nrgs[0],)
 
-        for center in centers:
-            for mean in means:
-                for sig in sigs:
-                    for nrg in nrgs:
+        features = np.zeros((centers.shape[0] * means.size * sigs.size * nrgs.size, self.n_features))
 
+        distr = np.zeros((pmts.shape[0], centers.shape[0], means.size, sigs.size, nrgs.size))
+        n = 0
+        for i, pmt in enumerate(pmts):
+            for j, center in enumerate(centers):
+                for k, mean in enumerate(means):
+                    for l, sig in enumerate(sigs):
+                        for m, nrg in enumerate(nrgs):
+                            distr[i, j, k, l, m] = np.exp(-(np.linalg.norm(pmt - center) - mean)**2 / sig**2) * nrg / self.N2
+                            
+                            features[n] = [center[0], center[1], mean, sig, nrg]
+                            n += 1
 
+        distr = distr.squeeze()
+        features = self.scaler.transform(features)
 
-        return features, img
+        return distr, variables, parameters, features
