@@ -9,8 +9,6 @@ from torch.nn import (
     BatchNorm2d
 )
 
-import torchbnn as bnn
-
 
 
 class LinearGenerator(torch.nn.Module):
@@ -74,33 +72,3 @@ class ConvGenerator(torch.nn.Module):
         img = self.conv_net(x.view(x.size(0), 512, 4, 4)).squeeze()
         return img
 
-
-
-class DGBaN(torch.nn.Module):
-    def __init__(self, input_size, img_size):
-        super(ConvGenerator, self).__init__()
-
-        self.img_size = img_size
-
-        self.neural_net = Sequential(
-            Linear(input_size, 512 * 4 * 4),
-            ReLU(),
-        )
-
-        self.conv_net = Sequential(
-            ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1),
-            BatchNorm2d(256),
-            ReLU(),
-            
-            ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
-            BatchNorm2d(128),
-            ReLU(),
-
-            ConvTranspose2d(128, 1, kernel_size=4, stride=2, padding=1),
-            Sigmoid()
-        )
-
-    def forward(self, x):
-        x = self.neural_net(x)
-        img = self.conv_net(x.view(x.size(0), 512, 4, 4)).squeeze()
-        return img

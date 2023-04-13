@@ -5,6 +5,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
+from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -50,6 +52,19 @@ def train_model(
         generator = LinearGenerator(dataset_generator.n_features, img_size=N).to(device)
     elif model_name == 'Conv':
         generator = ConvGenerator(dataset_generator.n_features, img_size=N).to(device)
+    elif model_name == 'DGBaN':
+        const_bnn_prior_parameters = {
+            "prior_mu": 0.0,
+            "prior_sigma": 1.0,
+            "posterior_mu_init": 0.0,
+            "posterior_rho_init": -3.0,
+            "type": "Reparameterization",  # Flipout or Reparameterization
+            "moped_enable": False,  # True to initialize mu/sigma from the pretrained dnn weights
+            "moped_delta": 0.5,
+        }
+        generator = ConvGenerator(dataset_generator.n_features, img_size=N)
+        dnn_to_bnn(generator, const_bnn_prior_parameters)
+        generator.to(device)
 
     if model_path: # use a pretrained model
         generator.load_state_dict(torch.load(model_path))
@@ -107,6 +122,8 @@ def train_model(
 if __name__ == "__main__" :
 
     parser = argparse.ArgumentParser(description='Train different generative architectures on simplistic rings.')
+    parser.add_argument('-t', '--data_type', type=str, help="Type of data", default ="", required=False)
+    parser.add_argument('-n', '--model_name', type=str, help="name of the model", default ="", required=False)
     parser.add_argument('-m', '--model_path', type=str, help="Pretained model path", default ="", required=False)
     parser.add_argument('-s', '--save_model', type=str, help="Pretained model path", default ="", required=False)
     parser.add_argument('-d', '--data_size', type=int, help="Number of events to train on", default=10_000, required=False)
@@ -114,7 +131,7 @@ if __name__ == "__main__" :
     parser.add_argument('-b', '--batch_size', type=int, help="Batch size", default=64, required=False)
     parser.add_argument('-l', '--lr', type=int, help="Learning rate", default=1e-2, required=False)
     parser.add_argument('-j', '--num_workers', type=int, help="Number of CPUs for loading data", default=8, required=False)
-    parser.add_argument('-t', '--train_fraction', type=float, help="Fraction of data used for training", default=0.8, required=False)
+    parser.add_argument('-f', '--train_fraction', type=float, help="Fraction of data used for training", default=0.8, required=False)
     parser.add_argument('-i', '--save_interval', type=int, help="Save network state every <save_interval> iterations", default=20, required=False)
     parser.add_argument('-r', '--random_seed', type=int, help="Random seed", default=42, required=False)
 
