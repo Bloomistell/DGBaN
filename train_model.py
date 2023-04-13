@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import matplotlib.pyplot as plt
 import numpy as np
 
-from generate_dataset import ring_dataset
+from generate_dataset import simple_ring_dataset, randomized_ring_dataset
 from models import LinearGenerator, ConvGenerator
 
 from IPython.display import clear_output
@@ -16,6 +16,7 @@ from IPython.display import clear_output
 
 
 def train_model(
+    data_type='Simple',
     model_name='Conv',
     model_path='',
     save_model='',
@@ -35,7 +36,11 @@ def train_model(
 
     # create a simplistic ring dataset
     N = 32
-    dataset_generator = ring_dataset(N=N)
+    if data_type == 'Simple':
+        dataset_generator = simple_ring_dataset(N=N)
+    elif data_type == 'Random':
+        dataset_generator = randomized_ring_dataset(N=N)
+
     train_loader, test_loader = dataset_generator.generate_dataset(data_size=data_size, batch_size=batch_size, seed=random_seed, device=device)
     train_loader
     test_loader
