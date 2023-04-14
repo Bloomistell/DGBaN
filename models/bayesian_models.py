@@ -1,13 +1,6 @@
 import torch
-from torch.nn import (
-    Linear,
-    Sequential,
-    ReLU,
-    BatchNorm1d,
-    Sigmoid,
-    ConvTranspose2d,
-    BatchNorm2d
-)
+import torch.nn as nn
+import torch.nn.functional as F
 
 from bayesian_torch.layers import (
     LinearReparametrization,
@@ -23,26 +16,30 @@ posterior_rho_init = -3.0
 
 
 def BayesLinearR(in_planes, out_planes, stride=2):
-    return LinearReparametrization(in_channels=in_planes,
-                                    out_channels=out_planes,
-                                    kernel_size=4,
-                                    stride=stride,
-                                    padding=1,
-                                    prior_mean=prior_mu,
-                                    prior_variance=prior_sigma,
-                                    posterior_mu_init=posterior_mu_init,
-                                    posterior_rho_init=posterior_rho_init)
+    return LinearReparametrization(
+        in_channels=in_planes,
+        out_channels=out_planes,
+        kernel_size=4,
+        stride=stride,
+        padding=1,
+        prior_mean=prior_mu,
+        prior_variance=prior_sigma,
+        posterior_mu_init=posterior_mu_init,
+        posterior_rho_init=posterior_rho_init
+    )
 
 def BayesConvT2dR(in_planes, out_planes, stride=2):
-    return Conv2dReparameterization(in_channels=in_planes,
-                                    out_channels=out_planes,
-                                    kernel_size=4,
-                                    stride=stride,
-                                    padding=1,
-                                    prior_mean=prior_mu,
-                                    prior_variance=prior_sigma,
-                                    posterior_mu_init=posterior_mu_init,
-                                    posterior_rho_init=posterior_rho_init)
+    return Conv2dReparameterization(
+        in_channels=in_planes,
+        out_channels=out_planes,
+        kernel_size=4,
+        stride=stride,
+        padding=1,
+        prior_mean=prior_mu,
+        prior_variance=prior_sigma,
+        posterior_mu_init=posterior_mu_init,
+        posterior_rho_init=posterior_rho_init
+    )
 
 
 class DGBaNR(torch.nn.Module): # R for reparametrization
@@ -53,53 +50,35 @@ class DGBaNR(torch.nn.Module): # R for reparametrization
 
         self.linear = BayesLinearR(input_size, 512 * 4 * 4)
 
-        self.neural_net = Sequential(
-            BayesLinearR(input_size, 512 * 4 * 4),
-            ReLU(),
-        )
-
         self.conv1 = BayesConvT2dR(512, 256)
-        self.batch_norm1 = BatchNorm2d(256)
+        self.batch_norm1 = nn.BatchNorm2d(256)
 
         self.conv2 = BayesConvT2dR(256, 128)
-        self.batch_norm2 = BatchNorm2d(128)
+        self.batch_norm2 = nn.BatchNorm2d(128)
 
         self.conv3 = BayesConvT2dR(128, 1)
-
-        self.conv_net = Sequential(
-            BayesConvT2dR(512, 256),
-            BatchNorm2d(256),
-            ReLU(),
-            
-            BayesConvT2dR(256, 128),
-            BatchNorm2d(128),
-            ReLU(),
-
-            BayesConvT2dR(128, 1),
-            Sigmoid()
-        )
 
     def forward(self, x):
         kl_sum = 0
 
         x, kl = self.linear(x)
         kl_sum += kl
-        x = ReLU(x)
+        x = F.ReLU(x)
 
         x, kl = self.conv1(x)
         kl_sum += kl
         x = self.batch_norm1(x)
-        x = ReLU(x)
+        x = F.ReLU(x)
 
         x, kl = self.conv2(x)
         kl_sum += kl
         x = self.batch_norm2(x)
-        x = ReLU(x)
+        x = F.ReLU(x)
         
         x, kl = self.conv3(x)
         kl_sum += kl
 
-        x = Sigmoid(x).squeeze()
+        x = F.log_softmax(x).squeeze()
 
-        return x
+        return x, kl_sum
 

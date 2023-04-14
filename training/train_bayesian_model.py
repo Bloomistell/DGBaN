@@ -2,6 +2,7 @@ import argparse
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -10,8 +11,8 @@ from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
 import matplotlib.pyplot as plt
 import numpy as np
 
-from generate_dataset import simple_ring_dataset, randomized_ring_dataset
-from models import DGBaNR
+from datasets.generate_simple_dataset import simple_ring_dataset, randomized_ring_dataset
+from models.bayesian_models import DGBaNR
 
 from IPython.display import clear_output
 
@@ -25,6 +26,7 @@ def train_model(
     data_size=10_000,
     epochs=10,
     batch_size=64,
+    num_mc=10,
     lr=1e-2,
     num_workers=8,
     train_fraction=0.8,
@@ -36,7 +38,7 @@ def train_model(
     torch.device(device)
 
 
-    # create a simplistic ring dataset
+    ### load dataset ###
     N = 32
     if data_type == 'Simple':
         dataset_generator = simple_ring_dataset(N=N)
@@ -46,22 +48,54 @@ def train_model(
     train_loader, test_loader = dataset_generator.generate_dataset(data_size=data_size, batch_size=batch_size, seed=random_seed, device=device)
 
 
+    ### load model ###
     if model_name == 'DGBaNR':
         generator = ConvGenerator(dataset_generator.n_features, img_size=N).to(device)
 
     if model_path: # use a pretrained model
         generator.load_state_dict(torch.load(model_path))
 
+
+    ### set optimizer and loss function ###
     optimizer = optim.Adadelta(generator.parameters(), lr=lr)
     criterion = nn.MSELoss()
 
 
+    ### training loop ###
     train_loss = []
     test_loss = []
+    model.train()
+
     for epoch in range(epochs):
         total_loss = 0
-        for i, (features, real_images) in enumerate(train_loader):
+        for i, (X, target) in enumerate(train_loader):
             optimizer.zero_grad()
+
+            pred_ = []
+            kl_ = []
+            for _ in range(num_mc): # extract several samples from the model
+                pred, kl = model(X)
+                pred_.append(pred)
+                kl_.append(kl)
+
+            pred = torch.mean(torch.stack(pred_), dim=0)
+            kl = torch.mean(torch.stack(kl_), dim=0)
+            nll_loss = F.nll_loss(pred, target)
+            # ELBO loss
+            loss = nll_loss + (kl / args.batch_size)
+
+            loss.backward()
+            optimizer.step()
+
+            if batch_idx % args.log_interval == 0:
+                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    epoch, batch_idx * len(data), len(train_loader.dataset),
+                    100. * batch_idx / len(train_loader), loss.item()))
+
+            if tb_writer is not None:
+                tb_writer.add_scalar('train/loss', loss.item(), epoch)
+                tb_writer.flush()
+
 
             generated_images = generator(features)
             loss = criterion(generated_images, real_images)
@@ -112,6 +146,7 @@ if __name__ == "__main__" :
     parser.add_argument('-d', '--data_size', type=int, help="Number of events to train on", default=10_000, required=False)
     parser.add_argument('-e', '--epochs', type=int, help="Number of epochs to train for", default=10, required=False)
     parser.add_argument('-b', '--batch_size', type=int, help="Batch size", default=64, required=False)
+    parser.add_argument('-mc', '--num_mc', type=int, help="Number of Monte Carlo runs during training", default=10, required=False)
     parser.add_argument('-l', '--lr', type=int, help="Learning rate", default=1e-2, required=False)
     parser.add_argument('-j', '--num_workers', type=int, help="Number of CPUs for loading data", default=8, required=False)
     parser.add_argument('-f', '--train_fraction', type=float, help="Fraction of data used for training", default=0.8, required=False)
