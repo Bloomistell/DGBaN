@@ -6,7 +6,7 @@ from sklearn.preprocessing import MinMaxScaler as mmScaler
 
 
 
-class simple_ring_dataset():
+class ring_dataset():
     def __init__(self, N=32, inner_scale=0.1, outer_scale=0.45, ring_resolution=1, train_fraction=0.8):
         self.N = N
         self.train_fraction = train_fraction

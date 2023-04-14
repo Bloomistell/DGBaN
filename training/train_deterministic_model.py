@@ -52,24 +52,11 @@ def train_model(
         generator = LinearGenerator(dataset_generator.n_features, img_size=N).to(device)
     elif model_name == 'Conv':
         generator = ConvGenerator(dataset_generator.n_features, img_size=N).to(device)
-    elif model_name == 'DGBaN':
-        const_bnn_prior_parameters = {
-            "prior_mu": 0.0,
-            "prior_sigma": 1.0,
-            "posterior_mu_init": 0.0,
-            "posterior_rho_init": -3.0,
-            "type": "Reparameterization",  # Flipout or Reparameterization
-            "moped_enable": False,  # True to initialize mu/sigma from the pretrained dnn weights
-            "moped_delta": 0.5,
-        }
-        generator = ConvGenerator(dataset_generator.n_features, img_size=N)
-        dnn_to_bnn(generator, const_bnn_prior_parameters)
-        generator.to(device)
 
     if model_path: # use a pretrained model
         generator.load_state_dict(torch.load(model_path))
 
-    optimizer = optim.Adam(generator.parameters(), lr=lr)
+    optimizer = optim.Adadelta(generator.parameters(), lr=lr)
     criterion = nn.MSELoss()
 
 
@@ -139,3 +126,5 @@ if __name__ == "__main__" :
     print(vars(args))
     
     train_model(**vars(args))
+
+    # python3 train_model.py -t Random -n DGBaN -s ../save_model/first_DGBaN.pt -e 200 -d 10000 -b 64
