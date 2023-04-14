@@ -43,14 +43,14 @@ class ring_dataset():
         ], axis=1)
 
         self.scaler = mmScaler()
-        features = self.scaler.fit_transform(features)
+        self.features = self.scaler.fit_transform(features)
 
         train_dataset = TensorDataset(
-            torch.tensor(features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
+            torch.tensor(self.features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
             torch.tensor(self.img[:int(self.train_fraction * data_size)], dtype=torch.float, device=device)
         )
         test_dataset = TensorDataset(
-            torch.tensor(features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
+            torch.tensor(self.features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
             torch.tensor(self.img[int(self.train_fraction * data_size):], dtype=torch.float, device=device)
         )
         
@@ -108,14 +108,14 @@ class randomized_ring_dataset():
         ], axis=1)
 
         self.scaler = mmScaler()
-        features = self.scaler.fit_transform(features)
+        self.features = self.scaler.fit_transform(features)
 
         train_dataset = TensorDataset(
-            torch.tensor(features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
+            torch.tensor(self.features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
             torch.tensor(imgs[:int(self.train_fraction * data_size)], dtype=torch.float, device=device)
         )
         test_dataset = TensorDataset(
-            torch.tensor(features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
+            torch.tensor(self.features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
             torch.tensor(imgs[int(self.train_fraction * data_size):], dtype=torch.float, device=device)
         )
         

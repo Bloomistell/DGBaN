@@ -1,3 +1,6 @@
+import sys
+sys.path.append('..')
+
 import argparse
 
 import torch
@@ -10,8 +13,8 @@ from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
 import matplotlib.pyplot as plt
 import numpy as np
 
-from generate_dataset import simple_ring_dataset, randomized_ring_dataset
-from models import LinearGenerator, ConvGenerator
+from DGBaN.datasets.generate_simple_dataset import ring_dataset, randomized_ring_dataset
+from DGBaN.models import LinearGenerator, ConvGenerator
 
 from IPython.display import clear_output
 
@@ -39,7 +42,7 @@ def train_model(
     # create a simplistic ring dataset
     N = 32
     if data_type == 'Simple':
-        dataset_generator = simple_ring_dataset(N=N)
+        dataset_generator = ring_dataset(N=N)
     elif data_type == 'Random':
         dataset_generator = randomized_ring_dataset(N=N)
 
@@ -56,7 +59,7 @@ def train_model(
     if model_path: # use a pretrained model
         generator.load_state_dict(torch.load(model_path))
 
-    optimizer = optim.Adadelta(generator.parameters(), lr=lr)
+    optimizer = optim.Adam(generator.parameters(), lr=lr)
     criterion = nn.MSELoss()
 
 
@@ -88,11 +91,11 @@ def train_model(
         clear_output()
         print(f'EPOCH {epoch+1}: train loss - {train_loss[-1]:.2g}, test loss - {test_loss[-1]:.2g}')
 
-        plt.figure()
-        plt.plot(np.arange(len(train_loss)), train_loss, label='train')
-        plt.plot(np.arange(len(test_loss)), test_loss, label='test')
-        plt.legend()
-        plt.savefig('./figures/train_test.png')
+        # plt.figure()
+        # plt.plot(np.arange(len(train_loss)), train_loss, label='train')
+        # plt.plot(np.arange(len(test_loss)), test_loss, label='test')
+        # plt.legend()
+        # plt.savefig('./figures/train_test.png')
 
         if epoch % 20 == 0 and epoch != 0:
             lr *= 1e-1

@@ -1,3 +1,6 @@
+import sys
+sys.path.append('..')
+
 import argparse
 
 import torch
@@ -5,14 +8,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.tensorboard import SummaryWriter
 
 from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from datasets.generate_simple_dataset import simple_ring_dataset, randomized_ring_dataset
-from models.bayesian_models import DGBaNR
+from DGBaN.datasets.generate_simple_dataset import ring_dataset, randomized_ring_dataset
+from DGBaN.models.bayesian_models import DGBaNR
 
 from IPython.display import clear_output
 
@@ -34,6 +38,9 @@ def train_model(
     output_dir="",
     random_seed=42
 ):
+    writer = SummaryWriter('../runs')
+
+
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     torch.device(device)
 
@@ -50,90 +57,66 @@ def train_model(
 
     ### load model ###
     if model_name == 'DGBaNR':
-        generator = ConvGenerator(dataset_generator.n_features, img_size=N).to(device)
+        generator = DGBaNR(dataset_generator.n_features, img_size=N).to(device)
+
+    example_data, _ = next(iter(test_loader))
+
+    writer.add_graph(generator, example_data)
 
     if model_path: # use a pretrained model
         generator.load_state_dict(torch.load(model_path))
 
 
-    ### set optimizer and loss function ###
+    ### set optimizer ###
     optimizer = optim.Adadelta(generator.parameters(), lr=lr)
-    criterion = nn.MSELoss()
 
 
     ### training loop ###
     train_loss = []
     test_loss = []
-    model.train()
+    generator.train()
+
+    num_steps = len(train_loader)
 
     for epoch in range(epochs):
-        total_loss = 0
+        sum_loss = 0.
         for i, (X, target) in enumerate(train_loader):
             optimizer.zero_grad()
 
             pred_ = []
             kl_ = []
             for _ in range(num_mc): # extract several samples from the model
-                pred, kl = model(X)
+                pred, kl = generator(X)
                 pred_.append(pred)
                 kl_.append(kl)
 
             pred = torch.mean(torch.stack(pred_), dim=0)
             kl = torch.mean(torch.stack(kl_), dim=0)
             nll_loss = F.nll_loss(pred, target)
-            # ELBO loss
-            loss = nll_loss + (kl / args.batch_size)
+            loss = nll_loss + (kl / batch_size) # ELBO loss
+            train_loss.append(loss)
 
             loss.backward()
             optimizer.step()
 
-            if batch_idx % args.log_interval == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_idx * len(data), len(train_loader.dataset),
-                    100. * batch_idx / len(train_loader), loss.item()))
+            sum_loss += loss.item()
 
-            if tb_writer is not None:
-                tb_writer.add_scalar('train/loss', loss.item(), epoch)
-                tb_writer.flush()
-
-
-            generated_images = generator(features)
-            loss = criterion(generated_images, real_images)
-            total_loss += loss.item()
-
-            loss.backward()
-            optimizer.step()
-
-        train_loss.append(total_loss / batch_size)
-
-        with torch.no_grad(): # evaluate model on test data
-            total_loss = 0
-            for i, (features, real_images) in enumerate(test_loader):
-                generated_images = generator(features)
-                loss = criterion(generated_images, real_images)
-                total_loss += loss.item()
+            if (i + 1) % 100 == 0:
+                writer.add_scalar('training loss', sum_loss / 100, epoch * num_steps + i)
+                sum_loss = 0.
         
-        test_loss.append(total_loss / batch_size)
-
-        clear_output()
         print(f'EPOCH {epoch+1}: train loss - {train_loss[-1]:.2g}, test loss - {test_loss[-1]:.2g}')
-
-        plt.figure()
-        plt.plot(np.arange(len(train_loss)), train_loss, label='train')
-        plt.plot(np.arange(len(test_loss)), test_loss, label='test')
-        plt.legend()
-        plt.savefig('./figures/train_test.png')
 
         if epoch % 20 == 0 and epoch != 0:
             lr *= 1e-1
-            optimizer = optim.Adam(generator.parameters(), lr=lr)
+            optimizer = optim.Adadelta(generator.parameters(), lr=lr)
         
         if save_model and epoch % save_interval == 0 and epoch != 0:
             torch.save(generator.state_dict(), save_model)
 
 
     generator.eval()
-    return generator, train_loss, test_loss, dataset_generator
+    return generator, dataset_generator
 
 
 if __name__ == "__main__" :

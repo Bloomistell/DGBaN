@@ -9,11 +9,6 @@ from torch.nn import (
     BatchNorm2d
 )
 
-from bayesian_torch.layers import (
-    LinearReparametrization as BayesLinearR,
-    ConvTranspose2dReparametrization as BayesConvT2dR
-)
-
 
 
 class LinearGenerator(torch.nn.Module):
@@ -74,6 +69,8 @@ class ConvGenerator(torch.nn.Module):
 
     def forward(self, x):
         x = self.neural_net(x)
+        print(x.size(0))
+
         img = self.conv_net(x.view(x.size(0), 512, 4, 4)).squeeze()
         return img
 
