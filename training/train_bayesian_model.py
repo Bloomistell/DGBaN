@@ -92,18 +92,36 @@ def train_model(
 
             pred = torch.mean(torch.stack(pred_), dim=0)
             kl = torch.mean(torch.stack(kl_), dim=0)
-            nll_loss = F.nll_loss(pred, target)
-            loss = nll_loss + (kl / batch_size) # ELBO loss
+            loss = F.mse_loss(pred, target) + (kl / batch_size)
             train_loss.append(loss)
+            sum_loss += loss.item()
 
             loss.backward()
             optimizer.step()
 
-            sum_loss += loss.item()
-
             if (i + 1) % 100 == 0:
                 writer.add_scalar('training loss', sum_loss / 100, epoch * num_steps + i)
                 sum_loss = 0.
+
+        with torch.no_grad(): # evaluate model on test data
+            total_loss = 0
+            for i, (X, target) in enumerate(test_loader):
+                pred_ = []
+                kl_ = []
+                for _ in range(num_mc):
+                    pred, kl = generator(X)
+                    pred_.append(pred)
+                    kl_.append(kl)
+
+                pred = torch.mean(torch.stack(pred_), dim=0)
+                kl = torch.mean(torch.stack(kl_), dim=0)
+                loss = F.mse_loss(pred, target) + (kl / batch_size)
+                test_loss.append(loss)
+                sum_loss += loss.item()
+
+                if (i + 1) % 100 == 0:
+                    writer.add_scalar('testing loss', sum_loss / 100, epoch * num_steps + i)
+                    sum_loss = 0.
         
         print(f'EPOCH {epoch+1}: train loss - {train_loss[-1]:.2g}, test loss - {test_loss[-1]:.2g}')
 
@@ -141,4 +159,4 @@ if __name__ == "__main__" :
     
     train_model(**vars(args))
 
-    # python3 train_model.py -t Random -n DGBaN -s ../save_model/first_DGBaN.pt -e 200 -d 10000 -b 64
+    # python3 training/train_bayesian_model.py -t Random -n DGBaNR -s ../save_model/first_DGBaN.pt -e 200 -d 6400 -b 64
