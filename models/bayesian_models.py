@@ -75,7 +75,7 @@ class DGBaNR(torch.nn.Module): # R for reparametrization
         x, kl = self.conv3(x)
         kl_sum += kl
 
-        x = F.log_softmax(x).squeeze()
+        x = torch.sigmoid(x).squeeze(dim=1)
 
         return x, kl_sum
 

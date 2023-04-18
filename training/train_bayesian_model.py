@@ -3,6 +3,8 @@ sys.path.append('..')
 
 import argparse
 
+import pickle
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -68,7 +70,8 @@ def train_model(
 
 
     ### set optimizer ###
-    optimizer = optim.Adadelta(generator.parameters(), lr=lr)
+    optimizer = optim.RMSprop(generator.parameters(), lr=lr)
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 
 
     ### training loop ###
@@ -76,7 +79,8 @@ def train_model(
     test_loss = []
     generator.train()
 
-    num_steps = len(train_loader)
+    train_steps = len(train_loader)
+    test_steps = len(test_loader)
 
     for epoch in range(epochs):
         sum_loss = 0.
@@ -99,9 +103,11 @@ def train_model(
             loss.backward()
             optimizer.step()
 
-            if (i + 1) % 100 == 0:
-                writer.add_scalar('training loss', sum_loss / 100, epoch * num_steps + i)
+            if i % 100 == 0 and i != 0:
+                writer.add_scalar('training loss', sum_loss / 100, epoch * train_steps + i)
                 sum_loss = 0.
+                
+        scheduler.step()
 
         with torch.no_grad(): # evaluate model on test data
             total_loss = 0
@@ -119,19 +125,14 @@ def train_model(
                 test_loss.append(loss)
                 sum_loss += loss.item()
 
-                if (i + 1) % 100 == 0:
-                    writer.add_scalar('testing loss', sum_loss / 100, epoch * num_steps + i)
+                if i % 100 == 0 and i != 0:
+                    writer.add_scalar('testing loss', sum_loss / 100, epoch * test_steps + i)
                     sum_loss = 0.
         
         print(f'EPOCH {epoch+1}: train loss - {train_loss[-1]:.2g}, test loss - {test_loss[-1]:.2g}')
-
-        if epoch % 20 == 0 and epoch != 0:
-            lr *= 1e-1
-            optimizer = optim.Adadelta(generator.parameters(), lr=lr)
         
         if save_model and epoch % save_interval == 0 and epoch != 0:
             torch.save(generator.state_dict(), save_model)
-
 
     generator.eval()
     return generator, dataset_generator
@@ -148,7 +149,7 @@ if __name__ == "__main__" :
     parser.add_argument('-e', '--epochs', type=int, help="Number of epochs to train for", default=10, required=False)
     parser.add_argument('-b', '--batch_size', type=int, help="Batch size", default=64, required=False)
     parser.add_argument('-mc', '--num_mc', type=int, help="Number of Monte Carlo runs during training", default=10, required=False)
-    parser.add_argument('-l', '--lr', type=int, help="Learning rate", default=1e-2, required=False)
+    parser.add_argument('-lr', '--lr', type=float, help="Learning rate", default=1e-2, required=False)
     parser.add_argument('-j', '--num_workers', type=int, help="Number of CPUs for loading data", default=8, required=False)
     parser.add_argument('-f', '--train_fraction', type=float, help="Fraction of data used for training", default=0.8, required=False)
     parser.add_argument('-i', '--save_interval', type=int, help="Save network state every <save_interval> iterations", default=20, required=False)

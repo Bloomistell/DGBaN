@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -72,59 +74,70 @@ class ring_dataset():
 
 
 class randomized_ring_dataset():
-    def __init__(self, N=32, ring_resolution=1, train_fraction=0.8):
+    def __init__(self, N=32, train_fraction=0.8):
         self.N = N
         self.N2 = N**2
         self.train_fraction = train_fraction
 
         self.centers = np.array([(i, j) for i in range(N) for j in range(N)], dtype=np.int32)
-        self.means = np.arange(N * 0.2, N * 0.4, ring_resolution)
-        self.sigs = np.arange(N * 0.05, N * 0.2, ring_resolution)
+        self.means = np.arange(N * 0.2, N * 0.4, N / 32)
+        self.sigs = np.arange(N * 0.05, N * 0.2, N / 32)
         self.nrgs = np.arange(0.05 * self.N2, 0.21 * self.N2, 0.02 * self.N2).astype(np.int32)
 
         self.img_coor = np.array([(i, j) for i in range(self.N) for j in range(self.N)], dtype=np.int32)
         self.n_features = 5
 
     def generate_dataset(self, data_size=10_000, batch_size=64, seed=42, device='cpu', test_return=False):
-        np.random.seed(seed)
+        features_path = f'save_dataset/features_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
+        imgs_path = f'save_dataset/images_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
+        if os.path.exists(features_path):
+            features = np.load(features_path)
+            self.imgs = np.load(imgs_path)
 
-        prob_distr, center, mean, sig = self._gaussian_ring(data_size)
-        nrg = np.random.choice(self.nrgs, size=data_size)
+        else:
+            np.random.seed(seed)
 
-        prob_distr_scaled = prob_distr / prob_distr.sum(axis=1)[:, np.newaxis]
-        pmt_hits = [np.random.choice(self.N2, size=nrg[i], p=prob_distr_scaled[i]) for i in range(data_size)]
+            prob_distr, center, mean, sig = self.gaussian_ring(data_size)
+            nrg = np.random.choice(self.nrgs, size=data_size)
 
-        imgs = np.zeros((data_size, self.N2), dtype=np.bool)
-        for i in range(data_size):
-            imgs[i, pmt_hits[i]] = 1
-        imgs = imgs.reshape((data_size, self.N, self.N))
+            features = np.concatenate([
+                center[:, 0].reshape(-1, 1),
+                center[:, 1].reshape(-1, 1),
+                mean.reshape(-1, 1),
+                sig.reshape(-1, 1),
+                nrg.reshape(-1, 1)
+            ], axis=1)
+            np.save(features_path, features)
 
-        features = np.concatenate([
-            center[:, 0].reshape(-1, 1),
-            center[:, 1].reshape(-1, 1),
-            mean.reshape(-1, 1),
-            sig.reshape(-1, 1),
-            nrg.reshape(-1, 1)
-        ], axis=1)
+
+            prob_distr_scaled = prob_distr / prob_distr.sum(axis=1)[:, np.newaxis]
+            pmt_hits = [np.random.choice(self.N2, size=nrg[i], p=prob_distr_scaled[i]) for i in range(data_size)]
+
+            imgs = np.zeros((data_size, self.N2), dtype=np.bool)
+            for i in range(data_size):
+                imgs[i, pmt_hits[i]] = 1
+
+            self.imgs = imgs.reshape((data_size, self.N, self.N))
+            np.save(imgs_path, self.imgs)
 
         self.scaler = mmScaler()
         self.features = self.scaler.fit_transform(features)
 
         train_dataset = TensorDataset(
             torch.tensor(self.features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
-            torch.tensor(imgs[:int(self.train_fraction * data_size)], dtype=torch.float, device=device)
+            torch.tensor(self.imgs[:int(self.train_fraction * data_size)], dtype=torch.float, device=device)
         )
         test_dataset = TensorDataset(
             torch.tensor(self.features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
-            torch.tensor(imgs[int(self.train_fraction * data_size):], dtype=torch.float, device=device)
+            torch.tensor(self.imgs[int(self.train_fraction * data_size):], dtype=torch.float, device=device)
         )
         
         if test_return:
-            return imgs
+            return self.features, self.imgs
         else:
             return DataLoader(train_dataset, batch_size=batch_size), DataLoader(test_dataset, batch_size=batch_size)
 
-    def _gaussian_ring(self, data_size):
+    def gaussian_ring(self, data_size):
         center = self.centers[np.random.choice(self.N2, size=data_size)]
         mean = np.random.choice(self.means, size=data_size)
         sig = np.random.choice(self.sigs, size=data_size)
@@ -199,3 +212,11 @@ class randomized_ring_dataset():
         features = self.scaler.transform(features)
 
         return distr, variables, parameters, features
+
+    def gaussian_from_features(self, center, mean, sig):
+
+        radius = np.linalg.norm(self.img_coor - center, axis=1)
+        
+        return np.exp(-(radius - mean)**2 / sig**2).reshape((self.N, self.N))
+
+

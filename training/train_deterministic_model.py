@@ -89,7 +89,7 @@ def train_model(
         test_loss.append(total_loss / batch_size)
 
         clear_output()
-        print(f'EPOCH {epoch+1}: train loss - {train_loss[-1]:.2g}, test loss - {test_loss[-1]:.2g}')
+        print(f'EPOCH {epoch+1}: train loss - {train_loss[-1]:.2g}, tentest loss - {test_loss[-1]:.2g}')
 
         # plt.figure()
         # plt.plot(np.arange(len(train_loss)), train_loss, label='train')
