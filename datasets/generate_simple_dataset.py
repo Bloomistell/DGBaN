@@ -88,8 +88,8 @@ class randomized_ring_dataset():
         self.n_features = 5
 
     def generate_dataset(self, data_size=10_000, batch_size=64, seed=42, device='cpu', test_return=False):
-        features_path = f'save_dataset/features_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
-        imgs_path = f'save_dataset/images_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
+        features_path = f'../save_dataset/features_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
+        imgs_path = f'../save_dataset/images_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
         if os.path.exists(features_path):
             features = np.load(features_path)
             self.imgs = np.load(imgs_path)
@@ -107,6 +107,7 @@ class randomized_ring_dataset():
                 sig.reshape(-1, 1),
                 nrg.reshape(-1, 1)
             ], axis=1)
+            
             np.save(features_path, features)
 
 
@@ -212,6 +213,89 @@ class randomized_ring_dataset():
         features = self.scaler.transform(features)
 
         return distr, variables, parameters, features
+
+    def gaussian_from_features(self, center, mean, sig):
+
+        radius = np.linalg.norm(self.img_coor - center, axis=1)
+        
+        return np.exp(-(radius - mean)**2 / sig**2).reshape((self.N, self.N))
+
+
+
+class energy_randomized_ring_dataset():
+    def __init__(self, N=32, train_fraction=0.8):
+        self.N = N
+        self.N2 = N**2
+        self.train_fraction = train_fraction
+
+        self.centers = np.array([(i, j) for i in range(N) for j in range(N)], dtype=np.int32)
+        self.means = np.arange(N * 0.2, N * 0.4, N / 32)
+        self.sigs = np.arange(N * 0.05, N * 0.2, N / 32)
+
+        self.img_coor = np.array([(i, j) for i in range(self.N) for j in range(self.N)], dtype=np.int32)
+        self.n_features = 4
+
+    def generate_dataset(self, data_size=10_000, batch_size=64, seed=42, device='cpu', test_return=False):
+        features_path = f'../save_dataset/energy_features_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
+        imgs_path = f'../save_dataset/energy_images_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
+        if os.path.exists(features_path):
+            features = np.load(features_path)
+            self.imgs = np.load(imgs_path)
+
+        else:
+            np.random.seed(seed)
+
+            gaus_ring, center, mean, sig = self.gaussian_ring(data_size)
+
+            features = np.concatenate([
+                center[:, 0].reshape(-1, 1),
+                center[:, 1].reshape(-1, 1),
+                mean.reshape(-1, 1),
+                sig.reshape(-1, 1)
+            ], axis=1)
+            
+            np.save(features_path, features)
+
+            val = np.arange(0.7, 1.3, 0.01)
+            distr = np.exp(-(val - 1)**2 / 0.2**2)
+
+            kernel = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)])
+
+            imgs = gaus_ring * kernel # adds gaussian noise
+
+            self.imgs = imgs.reshape((data_size, self.N, self.N))
+            np.save(imgs_path, self.imgs)
+
+        self.scaler = mmScaler()
+        self.features = self.scaler.fit_transform(features)
+
+        train_dataset = TensorDataset(
+            torch.tensor(self.features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
+            torch.tensor(self.imgs[:int(self.train_fraction * data_size)], dtype=torch.float, device=device)
+        )
+        test_dataset = TensorDataset(
+            torch.tensor(self.features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
+            torch.tensor(self.imgs[int(self.train_fraction * data_size):], dtype=torch.float, device=device)
+        )
+        
+        if test_return:
+            return self.features, self.imgs
+        else:
+            return DataLoader(train_dataset, batch_size=batch_size), DataLoader(test_dataset, batch_size=batch_size)
+
+    def gaussian_ring(self, data_size):
+        center = self.centers[np.random.choice(self.N2, size=data_size)]
+        mean = np.random.choice(self.means, size=data_size)
+        sig = np.random.choice(self.sigs, size=data_size)
+
+        radius = np.linalg.norm(self.img_coor[np.newaxis, :, :] - center[:, np.newaxis, :], axis=2)
+        
+        return (
+            np.exp(-(radius - mean[:, np.newaxis])**2 / sig[:, np.newaxis]**2),
+            center,
+            mean,
+            sig
+        )
 
     def gaussian_from_features(self, center, mean, sig):
 
