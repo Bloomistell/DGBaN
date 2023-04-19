@@ -79,3 +79,53 @@ class DGBaNR(torch.nn.Module): # R for reparametrization
 
         return x, kl_sum
 
+
+
+class big_DGBaNR(torch.nn.Module): # R for reparametrization
+    def __init__(self, input_size, img_size, activation_function):
+        super(big_DGBaNR, self).__init__()
+
+        self.img_size = img_size
+
+        self.linear1 = BayesLinearR(input_size, 256)
+        self.linear2 = BayesLinearR(256, 512 * 4 * 4)
+
+        self.conv1 = BayesConvT2dR(512, 256)
+        self.batch_norm1 = nn.BatchNorm2d(256)
+
+        self.conv2 = BayesConvT2dR(256, 128)
+        self.batch_norm2 = nn.BatchNorm2d(128)
+
+        self.conv3 = BayesConvT2dR(128, 1)
+
+        self.activation_function = getattr(F, activation_function)
+
+    def forward(self, x):
+        kl_sum = 0
+
+        x, kl = self.linear1(x)
+        kl_sum += kl
+        x = F.relu(x)
+        
+        x, kl = self.linear2(x)
+        kl_sum += kl
+        x = F.relu(x)
+        
+        x = x.view(x.size(0), 512, 4, 4)
+
+        x, kl = self.conv1(x)
+        kl_sum += kl
+        x = self.batch_norm1(x)
+        x = F.relu(x)
+
+        x, kl = self.conv2(x)
+        kl_sum += kl
+        x = self.batch_norm2(x)
+        x = F.relu(x)
+        
+        x, kl = self.conv3(x)
+        kl_sum += kl
+
+        x = self.activation_function(x).squeeze(dim=1)
+
+        return x, kl_sum

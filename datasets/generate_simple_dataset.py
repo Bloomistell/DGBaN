@@ -235,7 +235,7 @@ class energy_randomized_ring_dataset():
         self.img_coor = np.array([(i, j) for i in range(self.N) for j in range(self.N)], dtype=np.int32)
         self.n_features = 4
 
-    def generate_dataset(self, data_size=10_000, batch_size=64, seed=42, device='cpu', test_return=False):
+    def generate_dataset(self, data_size=10_000, batch_size=64, seed=42, device='cpu', scale_img=True, test_return=False):
         features_path = f'../save_dataset/energy_features_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
         imgs_path = f'../save_dataset/energy_images_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
         if os.path.exists(features_path):
@@ -262,6 +262,9 @@ class energy_randomized_ring_dataset():
             kernel = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)])
 
             imgs = gaus_ring * kernel # adds gaussian noise
+
+            self.img_scaler = mmScaler()
+            imgs = self.img_scaler.fit_transform(imgs)
 
             self.imgs = imgs.reshape((data_size, self.N, self.N))
             np.save(imgs_path, self.imgs)
@@ -297,9 +300,9 @@ class energy_randomized_ring_dataset():
             sig
         )
 
-    def gaussian_from_features(self, center, mean, sig):
+    def gaussian_from_features(self, center_x, center_y, mean, sig):
 
-        radius = np.linalg.norm(self.img_coor - center, axis=1)
+        radius = np.linalg.norm(self.img_coor - (center_x, center_y), axis=1)
         
         return np.exp(-(radius - mean)**2 / sig**2).reshape((self.N, self.N))
 
