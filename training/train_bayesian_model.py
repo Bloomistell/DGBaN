@@ -38,10 +38,41 @@ def train_model(
     loss_name='nll_loss',
     num_mc=10,
     lr=1e-2,
+    mean_training=True,
+    std_training=True,
     train_fraction=0.8,
     save_interval=20,
     random_seed=42
 ):
+    print(f"""TRAINING SUMMARY:
+        data_type (-t): {data_type}
+        model_name (-n): {model_name}
+        activation_function (-a): {activation_function}
+        model_path (-m): {model_path}
+        save_model (-s): {save_model}
+        data_size (-d): {data_size}
+        epochs (-e): {epochs}
+        batch_size (-b): {batch_size}
+        optim_name (-o): {optim_name}
+        loss_name (-l): {loss_name}
+        num_mc (-mc): {num_mc}
+        lr (-lr): {lr}
+        mean_training (-mt): {mean_training}
+        std_training (-st): {std_training}
+        train_fraction (-f): {train_fraction}
+        save_interval (-i): {save_interval}
+        random_seed (-r): {random_seed}
+        """)
+
+    proceed = None
+    yes = ['', 'yes', 'y']
+    no = ['no', 'n']
+    while proceed not in yes and proceed not in no:
+        proceed = input('Proceed ([y]/n)? ').lower()
+        if proceed in no:
+            print('Aborting...')
+            return
+
     writer = SummaryWriter(f'../runs/{model_name}_{activation_function}_{data_type}_{data_size}_{batch_size}_{optim_name}_{loss_name}_{num_mc}/')
 
 
@@ -89,47 +120,47 @@ def train_model(
 
     for epoch in range(epochs):
         sum_loss = 0.
-        for i, (X, target) in tqdm(enumerate(train_loader), f'EPOCH {epoch+1}', train_steps, leave=False, unit='batch'):
-            optimizer.zero_grad()
+        if mean_training: # here the goal is to train the mean of the neurone's gaussians, so we need num_mc > 1
+            for i, (X, target) in tqdm(enumerate(train_loader), f'EPOCH {epoch+1}', train_steps, leave=False, unit='batch'):
+                if mean_training:
+                    optimizer.zero_grad()
 
-            ### it seems to better capture the distribution probability wih only one mc (pretty logic actually) ###
-            # pred_ = []
-            # kl_ = []
-            # for _ in range(num_mc): # extract several samples from the model
-            #     pred, kl = generator(X)
-            #     pred_.append(pred)
-            #     kl_.append(kl)
+                    preds = []
+                    kls = []
+                    for i in range(num_mc): # extract several samples from the model
+                        pred, kl = generator(X)
+                        preds.append(pred)
+                        kls.append(kl)
 
-            # pred = torch.mean(torch.stack(pred_), dim=0)
-            # kl = torch.mean(torch.stack(kl_), dim=0)
+                    pred = torch.mean(torch.stack(preds), dim=0)
+                    kl = torch.mean(torch.stack(kls), dim=0)
 
-            pred, kl = generator(X)
+                    loss = loss_fn(pred, target) + (kl / batch_size)
+                    sum_loss += loss.item()
 
-            loss = loss_fn(pred, target) + (kl / batch_size)
-            sum_loss += loss.item()
+                    loss.backward()
+                    optimizer.step()
 
-            loss.backward()
-            optimizer.step()
+                if std_training:
+                    optimizer.zero_grad()
 
-            if i % (train_steps // 10) == 0 and i != 0:
-                writer.add_scalar('training loss', sum_loss / (train_steps // 10), epoch * train_steps + i)
-                sum_loss = 0.
+                    pred, kl = generator(X)
+
+                    loss = loss_fn(pred, target) + (kl / batch_size)
+                    sum_loss += loss.item()
+
+                    loss.backward()
+                    optimizer.step()
+
+                if i % (train_steps // 10) == 0 and i != 0:
+                    writer.add_scalar('training loss', sum_loss / (train_steps // 10), epoch * train_steps + i)
+                    sum_loss = 0.
                 
         scheduler.step()
 
         sum_loss = 0.
         with torch.no_grad(): # evaluate model on test data
-            for i, (X, target) in enumerate(test_loader):
-                # pred_ = []
-                # kl_ = []
-                # for _ in range(num_mc):
-                #     pred, kl = generator(X)
-                #     pred_.append(pred)
-                #     kl_.append(kl)
-
-                # pred = torch.mean(torch.stack(pred_), dim=0)
-                # kl = torch.mean(torch.stack(kl_), dim=0)
-
+            for i, (X, target) in tqdm(enumerate(test_loader), 'Validation', test_steps, leave=False, unit='batch'):
                 pred, kl = generator(X)
 
                 loss = loss_fn(pred, target) + (kl / batch_size)
@@ -149,6 +180,7 @@ if __name__ == "__main__" :
     parser = argparse.ArgumentParser(description='Train different generative architectures on simplistic rings.', argument_default=argparse.SUPPRESS)
     parser.add_argument('-t', '--data_type', type=str, help="Type of data")
     parser.add_argument('-n', '--model_name', type=str, help="name of the model")
+    parser.add_argument('-a', '--activation_function', type=str, help="activation function")
     parser.add_argument('-m', '--model_path', type=str, help="Pretained model path")
     parser.add_argument('-s', '--save_model', type=str, help="Pretained model path")
     parser.add_argument('-d', '--data_size', type=int, help="Number of events to train on")
@@ -163,9 +195,6 @@ if __name__ == "__main__" :
     parser.add_argument('-r', '--random_seed', type=int, help="Random seed")
 
     args = parser.parse_args()
-
-    for arg_name, arg in vars(args).items():
-        print(f'   {arg_name}: {arg}')
 
     train_model(**vars(args))
 

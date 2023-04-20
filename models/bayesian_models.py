@@ -98,7 +98,10 @@ class big_DGBaNR(torch.nn.Module): # R for reparametrization
 
         self.conv3 = BayesConvT2dR(128, 1)
 
-        self.activation_function = getattr(F, activation_function)
+        if activation_function == 'sigmoid':
+            self.activation_function = torch.sigmoid
+        else:
+            self.activation_function = getattr(F, activation_function)
 
     def forward(self, x):
         kl_sum = 0
