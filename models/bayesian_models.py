@@ -132,3 +132,5 @@ class big_DGBaNR(torch.nn.Module): # R for reparametrization
         x = self.activation_function(x).squeeze(dim=1)
 
         return x, kl_sum
+
+        

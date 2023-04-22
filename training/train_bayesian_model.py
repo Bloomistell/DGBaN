@@ -41,7 +41,7 @@ def train_model(
     mean_training=True,
     std_training=True,
     train_fraction=0.8,
-    save_interval=20,
+    save_interval=1,
     random_seed=42
 ):
     print(f"""TRAINING SUMMARY:
@@ -64,14 +64,14 @@ def train_model(
         random_seed (-r): {random_seed}
         """)
 
-    proceed = None
-    yes = ['', 'yes', 'y']
-    no = ['no', 'n']
-    while proceed not in yes and proceed not in no:
-        proceed = input('Proceed ([y]/n)? ').lower()
-        if proceed in no:
-            print('Aborting...')
-            return
+    # proceed = None
+    # yes = ['', 'yes', 'y']
+    # no = ['no', 'n']
+    # while proceed not in yes and proceed not in no:
+    #     proceed = input('Proceed ([y]/n)? ').lower()
+    #     if proceed in no:
+    #         print('Aborting...')
+    #         return
 
     writer = SummaryWriter(f'../runs/{model_name}_{activation_function}_{data_type}_{data_size}_{batch_size}_{optim_name}_{loss_name}_{num_mc}/')
 
@@ -110,6 +110,14 @@ def train_model(
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 
     loss_fn = getattr(F, loss_name)
+
+    
+    ### set accuracy variables
+    n_samples = 1000
+    feature = torch.Tensor(data_gen.scaler.transform(np.array([[15, 15, 9.4, 3.6]])))
+    features = [feature.to(device) for i in range(n_samples)]
+
+    true_prob = torch.Tensor(data_gen.gaussian_from_features(15, 15, 9.4, 3.6)).to(device)
 
 
     ### training loop ###
@@ -152,8 +160,8 @@ def train_model(
                     loss.backward()
                     optimizer.step()
 
-                if i % (train_steps // 10) == 0 and i != 0:
-                    writer.add_scalar('training loss', sum_loss / (train_steps // 10), epoch * train_steps + i)
+                if i % 100 == 0 and i != 0:
+                    writer.add_scalar('training loss', sum_loss / 100, epoch * train_steps + i)
                     sum_loss = 0.
                 
         scheduler.step()
@@ -166,10 +174,20 @@ def train_model(
                 loss = loss_fn(pred, target) + (kl / batch_size)
                 sum_loss += loss.item()
 
-                if i % (test_steps // 10) == 0 and i != 0:
-                    writer.add_scalar('testing loss', sum_loss / (test_steps // 10), epoch * test_steps + i)
-                    sum_loss = 0.
+            writer.add_scalar('testing loss', sum_loss / test_steps, epoch * test_steps + i)
+            sum_loss = 0.
+
+            # getting the predictions for the base features
+            pred_rings = torch.zeros((n_samples, 32, 32)).to(device)
+            for i, tensor in enumerate(features):
+                pred_rings[i] += generator(tensor)[0].squeeze()
+
+            pred_ring = pred_rings.sum(axis=0)
+            pred_prob = pred_ring / pred_ring.max()
+
+            writer.add_scalar('accuracy', 1 - (true_prob - pred_prob).mean(), epoch)
         
+
         if save_model and epoch % save_interval == 0 and epoch != 0:
             torch.save(generator.state_dict(), save_model + f'{model_name}_{activation_function}_{data_type}_{data_size}_{batch_size}_{optim_name}_{loss_name}_{num_mc}.pt')
 
