@@ -19,7 +19,7 @@ from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
 import matplotlib.pyplot as plt
 import numpy as np
 
-from DGBaN import ring_dataset, randomized_ring_dataset, energy_randomized_ring_dataset, DGBaNR, big_DGBaNR
+from DGBaN import ring_dataset, randomized_ring_dataset, energy_randomized_ring_dataset, pattern_randomized_ring_dataset, DGBaNR, big_DGBaNR
 
 from IPython.display import clear_output
 
@@ -87,6 +87,8 @@ def train_model(
         data_gen = randomized_ring_dataset(N=N)
     elif data_type == 'energy_random':
         data_gen = energy_randomized_ring_dataset(N=N)
+    elif data_type == 'pattern_random':
+        data_gen = pattern_randomized_ring_dataset(N=N)
 
     train_loader, test_loader = data_gen.generate_dataset(data_size=data_size, batch_size=batch_size, seed=random_seed, device=device)
 

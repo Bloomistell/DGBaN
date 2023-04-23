@@ -312,8 +312,8 @@ class pattern_randomized_ring_dataset():
         self.train_fraction = train_fraction
 
         self.centers = np.array([(i, j) for i in range(8, N-8) for j in range(8, N-8)], dtype=np.int32)
-        self.means = np.arange(2, 3, 0.1)
-        self.sigs = np.arange(7, 9, 0.2)
+        self.means = np.arange(7, 9, 0.2)
+        self.sigs = np.arange(2, 3, 0.1)
         self.thetas = np.arange(0, 2 * np.pi, np.pi / 8)
         self.phis = np.arange(0, 0.5, 0.05)
 
@@ -330,8 +330,14 @@ class pattern_randomized_ring_dataset():
         else:
             np.random.seed(seed)
 
-            imgs, center_x, center_y, mean, sig, theta, phi = self.gaussian_ring(data_size)
-
+            center = self.centers[np.random.choice(16**2, size=data_size)]
+            center_x = center[:, 0]
+            center_y = center[:, 1]
+            mean = np.random.choice(self.means, size=data_size)
+            sig = np.random.choice(self.sigs, size=data_size)
+            theta = np.random.choice(self.thetas, size=data_size)
+            phi = np.random.choice(self.phis, size=data_size)
+            
             features = np.concatenate([
                 center_x.reshape(-1, 1),
                 center_y.reshape(-1, 1),
@@ -342,7 +348,17 @@ class pattern_randomized_ring_dataset():
             ], axis=1)
             # np.save(features_path, features)
 
-            self.imgs = imgs.reshape((data_size, self.N, self.N)) / 1.3
+            imgs = self.gaussian_ring(data_size, center, mean, sig, theta, phi)
+
+            self.induce_noise(center_x, data_size, -8, 8, 8)
+            self.induce_noise(center_y, data_size, -8, 8, 8)
+            self.induce_noise(mean, data_size, -1, 1, 0.8)
+            self.induce_noise(sig, data_size, -0.5, 0.5, 0.5)
+            self.induce_noise(theta, data_size, -np.pi / 4, np.pi / 4, 1)
+            
+            noise = self.gaussian_ring(data_size, center, mean, sig, theta, phi)
+
+            self.imgs = ((imgs + noise * 0.1) / 1.2).reshape((data_size, self.N, self.N))
             # np.save(imgs_path, self.imgs)
 
         self.scaler = mmScaler()
@@ -362,28 +378,14 @@ class pattern_randomized_ring_dataset():
         else:
             return DataLoader(train_dataset, batch_size=batch_size), DataLoader(test_dataset, batch_size=batch_size)
 
-    def gaussian_ring(self, data_size):
-        center = self.centers[np.random.choice(16**2, size=data_size)]
-        mean = np.random.choice(self.means, size=data_size)
-        sig = np.random.choice(self.sigs, size=data_size)
-        theta = np.random.choice(self.thetas, size=data_size)
-        phi = np.random.choice(self.phis, size=data_size)
-
+    def gaussian_ring(self, data_size, center, mean, sig, theta, phi):
         centered = self.img_coor[np.newaxis, :, :] - center[:, np.newaxis, :]
         radius = np.linalg.norm(centered, axis=2)
 
         angle = np.arccos(centered[:, :, 0] / (np.sqrt(centered[:, :, 1]**2 + centered[:, :, 0]**2) + 1e-10)) * np.sign(centered[:, :, 1] + 1e-10)
         radius += np.cos(angle - theta[:, np.newaxis]) * radius * phi[:, np.newaxis]
-        
-        return (
-            np.exp(-(radius - mean[:, np.newaxis])**2 / sig[:, np.newaxis]**2),
-            center[:, 0],
-            center[:, 1],
-            mean,
-            sig,
-            theta,
-            phi
-        )
+
+        return np.exp(-(radius - mean[:, np.newaxis])**2 / sig[:, np.newaxis]**2).reshape((100, 32, 32))
 
     def gaussian_from_features(self, center_x, center_y, mean, sig, theta, phi):
         centered = self.img_coor - (center_x, center_y)
@@ -393,3 +395,12 @@ class pattern_randomized_ring_dataset():
         radius += np.cos(angle - theta) * radius * phi
         
         return np.exp(-(radius - mean)**2 / sig**2).reshape((self.N, self.N))
+
+    def induce_noise(self, array, data_size, low, high, sig):
+        noise_distr = np.arange(low, high + 1e-6, (high - low) / 10)
+        prob_distr = np.exp(-noise_distr**2 / sig**2)
+
+        kernel = np.array([np.random.choice(noise_distr, p=prob_distr / prob_distr.sum()) for _ in range(data_size)])
+        array += kernel.astype(type(array[0]))
+
+
