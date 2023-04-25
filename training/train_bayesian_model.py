@@ -19,9 +19,15 @@ from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
 import matplotlib.pyplot as plt
 import numpy as np
 
-from DGBaN import ring_dataset, randomized_ring_dataset, energy_randomized_ring_dataset, pattern_randomized_ring_dataset, DGBaNR, big_DGBaNR
-
-from IPython.display import clear_output
+from DGBaN import (
+    ring_dataset,
+    randomized_ring_dataset,
+    energy_randomized_ring_dataset,
+    pattern_randomized_ring_dataset,
+    DGBaNR,
+    big_DGBaNR,
+    half_DGBaNR
+)
 
 
 
@@ -31,7 +37,7 @@ def train_model(
     activation_function='sigmoid',
     model_path='',
     save_model='../save_model/',
-    data_size=64_000,
+    data_size=64000,
     epochs=200,
     batch_size=64,
     optim_name='Adam',
@@ -44,7 +50,8 @@ def train_model(
     save_interval=1,
     random_seed=42
 ):
-    print(f"""TRAINING SUMMARY:
+    print(
+    f"""TRAINING SUMMARY:
         data_type (-t): {data_type}
         model_name (-n): {model_name}
         activation_function (-a): {activation_function}
@@ -61,8 +68,8 @@ def train_model(
         std_training (-st): {std_training}
         train_fraction (-f): {train_fraction}
         save_interval (-i): {save_interval}
-        random_seed (-r): {random_seed}
-        """)
+        random_seed (-r): {random_seed}"""
+    )
 
     # proceed = None
     # yes = ['', 'yes', 'y']
@@ -101,7 +108,7 @@ def train_model(
     elif model_name == 'half_DGBaNR':
         generator = half_DGBaNR(data_gen.n_features, N, activation_function).to(device)
 
-    generator = torch.compile(generator) # supposed to improve training time (pytorch 2.0 feature)
+    # generator = torch.compile(generator) # supposed to improve training time (pytorch 2.0 feature)
 
     example_data, _ = next(iter(test_loader))
 
@@ -135,7 +142,7 @@ def train_model(
     for epoch in range(epochs):
         sum_loss = 0.
         if mean_training: # here the goal is to train the mean of the neurone's gaussians, so we need num_mc > 1
-            for i, (X, target) in tqdm(enumerate(train_loader), f'EPOCH {epoch+1}', train_steps, leave=False, unit='batch'):
+            for i, (X, target) in tqdm(enumerate(train_loader), f'EPOCH {epoch+1}', train_steps, leave=False, ncols=5, unit='batch'):
                 if mean_training:
                     optimizer.zero_grad()
 
@@ -174,7 +181,7 @@ def train_model(
 
         sum_loss = 0.
         with torch.no_grad(): # evaluate model on test data
-            for i, (X, target) in tqdm(enumerate(test_loader), 'Validation', test_steps, leave=False, unit='batch'):
+            for i, (X, target) in tqdm(enumerate(test_loader), 'Validation', test_steps, leave=False, ncols=5, unit='batch'):
                 pred, kl = generator(X)
 
                 loss = loss_fn(pred, target) + (kl / batch_size)

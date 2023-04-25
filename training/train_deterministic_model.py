@@ -16,8 +16,6 @@ import numpy as np
 from DGBaN.datasets.generate_simple_dataset import ring_dataset, randomized_ring_dataset
 from DGBaN.models import LinearGenerator, ConvGenerator
 
-from IPython.display import clear_output
-
 
 
 def train_model(
