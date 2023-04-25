@@ -312,13 +312,13 @@ class pattern_randomized_ring_dataset():
         self.train_fraction = train_fraction
 
         self.centers = np.array([(i, j) for i in range(8, N-8) for j in range(8, N-8)], dtype=np.int32)
-        self.means = np.arange(7, 9, 0.2)
-        self.sigs = np.arange(2, 3, 0.1)
+        self.means = np.arange(8, 10, 0.2)
+        self.sigs = np.arange(1, 2, 0.1)
         self.thetas = np.arange(0, 2 * np.pi, np.pi / 8)
         self.phis = np.arange(0, 0.5, 0.05)
 
         self.img_coor = np.array([(i, j) for i in range(self.N) for j in range(self.N)], dtype=np.int32)
-        self.n_features = 4
+        self.n_features = 6
 
     def generate_dataset(self, data_size=10_000, batch_size=64, seed=42, device='cpu', scale_img=True, test_return=False):
         features_path = f'../save_dataset/pattern_features_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
@@ -346,7 +346,7 @@ class pattern_randomized_ring_dataset():
                 theta.reshape(-1, 1),
                 phi.reshape(-1, 1)
             ], axis=1)
-            # np.save(features_path, features)
+            np.save(features_path, features)
 
             imgs = self.gaussian_ring(data_size, center, mean, sig, theta, phi)
 
@@ -359,7 +359,7 @@ class pattern_randomized_ring_dataset():
             noise = self.gaussian_ring(data_size, center, mean, sig, theta, phi)
 
             self.imgs = ((imgs + noise * 0.1) / 1.2).reshape((data_size, self.N, self.N))
-            # np.save(imgs_path, self.imgs)
+            np.save(imgs_path, self.imgs)
 
         self.scaler = mmScaler()
         self.features = self.scaler.fit_transform(features)
@@ -385,7 +385,7 @@ class pattern_randomized_ring_dataset():
         angle = np.arccos(centered[:, :, 0] / (np.sqrt(centered[:, :, 1]**2 + centered[:, :, 0]**2) + 1e-10)) * np.sign(centered[:, :, 1] + 1e-10)
         radius += np.cos(angle - theta[:, np.newaxis]) * radius * phi[:, np.newaxis]
 
-        return np.exp(-(radius - mean[:, np.newaxis])**2 / sig[:, np.newaxis]**2).reshape((100, 32, 32))
+        return np.exp(-(radius - mean[:, np.newaxis])**2 / sig[:, np.newaxis]**2)
 
     def gaussian_from_features(self, center_x, center_y, mean, sig, theta, phi):
         centered = self.img_coor - (center_x, center_y)

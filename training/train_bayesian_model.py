@@ -98,6 +98,10 @@ def train_model(
         generator = DGBaNR(data_gen.n_features, img_size=N).to(device)
     elif model_name == 'big_DGBaNR':
         generator = big_DGBaNR(data_gen.n_features, N, activation_function).to(device)
+    elif model_name == 'half_DGBaNR':
+        generator = half_DGBaNR(data_gen.n_features, N, activation_function).to(device)
+
+    generator = torch.compile(generator) # supposed to improve training time (pytorch 2.0 feature)
 
     example_data, _ = next(iter(test_loader))
 
@@ -116,10 +120,10 @@ def train_model(
     
     ### set accuracy variables
     n_samples = 1000
-    feature = torch.Tensor(data_gen.scaler.transform(np.array([[15, 15, 9.4, 3.6]])))
+    feature = torch.Tensor(data_gen.scaler.transform(np.array([[15, 15, 8, 2.5, 0, 0.25]])))
     features = [feature.to(device) for i in range(n_samples)]
 
-    true_prob = torch.Tensor(data_gen.gaussian_from_features(15, 15, 9.4, 3.6)).to(device)
+    true_prob = torch.Tensor(data_gen.gaussian_from_features(*[15, 15, 8, 2.5, 0, 0.25])).to(device)
 
 
     ### training loop ###
