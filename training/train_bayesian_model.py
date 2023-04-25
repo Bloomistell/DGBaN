@@ -142,7 +142,7 @@ def train_model(
     for epoch in range(epochs):
         sum_loss = 0.
         if mean_training: # here the goal is to train the mean of the neurone's gaussians, so we need num_mc > 1
-            for i, (X, target) in tqdm(enumerate(train_loader), f'EPOCH {epoch+1}', train_steps, leave=False, ncols=5, unit='batch'):
+            for i, (X, target) in tqdm(enumerate(train_loader), f'EPOCH {epoch+1}', train_steps, leave=False, unit='batch'):
                 if mean_training:
                     optimizer.zero_grad()
 
@@ -181,7 +181,7 @@ def train_model(
 
         sum_loss = 0.
         with torch.no_grad(): # evaluate model on test data
-            for i, (X, target) in tqdm(enumerate(test_loader), 'Validation', test_steps, leave=False, ncols=5, unit='batch'):
+            for i, (X, target) in tqdm(enumerate(test_loader), 'Validation', test_steps, leave=False, unit='batch'):
                 pred, kl = generator(X)
 
                 loss = loss_fn(pred, target) + (kl / batch_size)
