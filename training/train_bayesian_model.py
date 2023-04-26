@@ -27,13 +27,12 @@ from DGBaN import (
     multi_randomized_ring_dataset,
     DGBaNR,
     big_DGBaNR,
-    half_DGBaNR,
     multi_half_DGBaNR
 )
 
 
 
-def train_model(
+def train_bayes_model(
     data_type='energy_random',
     model_name='DGBaNR',
     activation_function='sigmoid',
@@ -132,11 +131,11 @@ def train_model(
 
     
     ### set accuracy variables
-    n_samples = 1000
-    feature = torch.Tensor(data_gen.scaler.transform(np.array([[15, 15, 8, 2.5, 0, 0.25]])))
-    features = [feature.to(device) for i in range(n_samples)]
+    # n_samples = 1000
+    # feature = torch.Tensor(data_gen.scaler.transform(np.array([[15, 15, 8, 1.3, 0, 0.25, 20, 20, 6, 1, -1.8, 0.5]])))
+    # features = [feature.to(device) for i in range(n_samples)]
 
-    true_prob = torch.Tensor(data_gen.gaussian_from_features(*[15, 15, 8, 2.5, 0, 0.25])).to(device)
+    # true_prob = torch.Tensor(data_gen.gaussian_from_features(*[15, 15, 8, 1.3, 0, 0.25, 20, 20, 6, 1, -1.8, 0.5])).to(device)
 
 
     ### training loop ###
@@ -197,17 +196,17 @@ def train_model(
             sum_loss = 0.
 
             # getting the predictions for the base features
-            pred_rings = torch.zeros((n_samples, 32, 32)).to(device)
-            for i, tensor in enumerate(features):
-                pred_rings[i] += generator(tensor)[0].squeeze()
+            # pred_rings = torch.zeros((n_samples, 32, 32)).to(device)
+            # for i, tensor in enumerate(features):
+            #     pred_rings[i] += generator(tensor)[0].squeeze()
 
-            pred_ring = pred_rings.sum(axis=0)
-            pred_prob = pred_ring / pred_ring.max()
+            # pred_ring = pred_rings.sum(axis=0)
+            # pred_prob = pred_ring / pred_ring.max()
 
-            writer.add_scalar('accuracy', 1 - (true_prob - pred_prob).mean(), epoch)
+            # writer.add_scalar('accuracy', 1 - (true_prob - pred_prob).mean(), epoch)
         
 
-        if save_model and epoch % save_interval == 0 and epoch != 0:
+        if save_model and epoch % save_interval == 0:
             torch.save(generator.state_dict(), save_model + f'{model_name}_{activation_function}_{data_type}_{data_size}_{batch_size}_{optim_name}_{loss_name}_{num_mc}.pt')
 
 
@@ -233,6 +232,6 @@ if __name__ == "__main__" :
 
     args = parser.parse_args()
 
-    train_model(**vars(args))
+    train_bayes_model(**vars(args))
 
     # python3 training/train_bayesian_model.py -t energy_random -n DGBaNR -e 200 -d 64000 -b 64 -o Adam -l mse_loss -mc 20

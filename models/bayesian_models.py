@@ -141,8 +141,8 @@ class multi_half_DGBaNR(torch.nn.Module): # the idea for this one is to keep the
 
         self.img_size = img_size
 
-        self.linear_1 = nn.Linear(input_size, 54)
-        self.linear_2 = nn.Linear(input_size, 54)
+        self.linear_1 = nn.Linear(input_size // 2, 54)
+        self.linear_2 = nn.Linear(input_size // 2, 54)
 
         self.linear_layers = nn.Sequential(
             nn.ReLU(),
@@ -169,8 +169,9 @@ class multi_half_DGBaNR(torch.nn.Module): # the idea for this one is to keep the
             self.activation_function = getattr(F, activation_function)
 
     def forward(self, x):
-        x_1 = self.linear1(x[:6])
-        x_2 = self.linear1(x[6:])
+        x_1, x_2 = torch.split(x, 6, dim=1)
+        x_1 = self.linear_1(x_1)
+        x_2 = self.linear_2(x_2)
 
         x = torch.cat((x_1, x_2), dim=1)
         x = self.linear_layers(x)

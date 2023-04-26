@@ -419,18 +419,18 @@ class multi_randomized_ring_dataset():
         self.N2 = N**2
         self.train_fraction = train_fraction
 
-        self.centers = np.array([(i, j) for i in range(8, N-8) for j in range(8, N-8)], dtype=np.int32)
-        self.means = np.arange(6, 9, 0.03)
-        self.sigs = np.arange(0.8, 1.6, 0.01)
-        self.thetas = np.arange(0, 2 * np.pi, np.pi / 80)
-        self.phis = np.arange(0, 0.5, 0.005)
+        self.centers = np.array([(i, j) for i in range(8, N-8) for j in range(8, N-8)], dtype=np.half)
+        self.means = np.arange(6, 9, 0.03, dtype=np.half)
+        self.sigs = np.arange(0.8, 1.6, 0.01, dtype=np.half)
+        self.thetas = np.arange(0, 2 * np.pi, np.pi / 80, dtype=np.half)
+        self.phis = np.arange(0, 0.5, 0.005, dtype=np.half)
 
-        self.img_coor = np.array([(i, j) for i in range(self.N) for j in range(self.N)], dtype=np.int32)
+        self.img_coor = np.array([(i, j) for i in range(self.N) for j in range(self.N)], dtype=np.half)
         self.n_features = 12
 
-    def generate_dataset(self, data_size=10_000, batch_size=64, seed=42, device='cpu', scale_img=True, test_return=False):
-        features_path = f'../save_dataset/pattern_features_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
-        imgs_path = f'../save_dataset/pattern_images_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
+    def generate_dataset(self, data_size=10_000, batch_size=64, seed=42, device='cpu', test_return=False):
+        features_path = f'../save_dataset/multi_features_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
+        imgs_path = f'../save_dataset/multi_images_N-{self.N}_data_size-{data_size}_seed-{seed}.npy'
         if os.path.exists(features_path):
             features = np.load(features_path)
             self.imgs = np.load(imgs_path)
@@ -456,6 +456,16 @@ class multi_randomized_ring_dataset():
             theta_2 = np.random.choice(self.thetas, size=data_size)
             phi_2 = np.random.choice(self.phis, size=data_size)
             
+            imgs_1 = self.gaussian_rings(data_size, center_1, mean_1, sig_1, theta_1, phi_1)
+            imgs_2 = imgs_1.copy()
+            np.random.shuffle(imgs_2)
+
+            val = np.arange(0, 2, 0.01, dtype=np.half)
+            distr = np.exp(-(val - 1)**2 / 0.3**2)
+            kernel = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)]) # adds gaussian noise
+
+            particle_2 = np.array([np.random.choice([0, 1]) for _ in range(data_size)], dtype=np.half) # chooses if there are 2 particles
+
             features = np.concatenate([
                 center_x_1.reshape(-1, 1),
                 center_y_1.reshape(-1, 1),
@@ -470,19 +480,11 @@ class multi_randomized_ring_dataset():
                 theta_2.reshape(-1, 1),
                 phi_2.reshape(-1, 1)
             ], axis=1)
-            # np.save(features_path, features)
-
-            imgs_1 = self.gaussian_rings(data_size, center_1, mean_1, sig_1, theta_1, phi_1)
-            imgs_2 = self.gaussian_rings(data_size, center_2, mean_2, sig_2, theta_2, phi_2)
-
-            val = np.arange(0, 2, 0.01)
-            distr = np.exp(-(val - 1)**2 / 0.3**2)
-            kernel = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)]) # adds gaussian noise
-
-            particle_2 = np.array([np.random.choice([0, 1]) for _ in range(data_size)]) # chooses if there are 2 particles
+            features[:, 6:] *= particle_2[:, np.newaxis]
+            np.save(features_path, features)
 
             self.imgs = ((imgs_1 + imgs_2 * particle_2[:, np.newaxis]) * kernel).reshape((data_size, self.N, self.N)) / 4
-            # np.save(imgs_path, self.imgs)
+            np.save(imgs_path, self.imgs)
 
         self.scaler = mmScaler()
         self.features = self.scaler.fit_transform(features)
@@ -505,16 +507,35 @@ class multi_randomized_ring_dataset():
         centered = self.img_coor[np.newaxis, :, :] - center[:, np.newaxis, :]
         radius = np.linalg.norm(centered, axis=2)
 
-        angle = np.arccos(centered[:, :, 0] / (np.sqrt(centered[:, :, 1]**2 + centered[:, :, 0]**2) + 1e-10)) * np.sign(centered[:, :, 1] + 1e-10)
+        angle = np.arccos(centered[:, :, 0] / (np.sqrt(centered[:, :, 1]**2 + centered[:, :, 0]**2) + 1e-6)) * np.sign(centered[:, :, 1] + 1e-6)
         radius += np.cos(angle - theta[:, np.newaxis]) * radius * phi[:, np.newaxis]
 
         return np.exp(-(radius - mean[:, np.newaxis])**2 / sig[:, np.newaxis]**2)
 
-    def gaussian_from_features(self, center_x, center_y, mean, sig, theta, phi):
+    def gaussian_from_features(self,
+        center_x_1,
+        center_y_1,
+        mean_1,
+        sig_1,
+        theta_1,
+        phi_1,
+        center_x_2,
+        center_y_2,
+        mean_2,
+        sig_2,
+        theta_2,
+        phi_2
+    ):
+        img_1 = self._gaussian_from_features(center_x_1, center_y_1, mean_1, sig_1, theta_1, phi_1)
+        img_2 = self._gaussian_from_features(center_x_2, center_y_2, mean_2, sig_2, theta_2, phi_2)
+
+        return (img_1 + img_2) / 4
+    
+    def _gaussian_from_features(self, center_x, center_y, mean, sig, theta, phi):
         centered = self.img_coor - (center_x, center_y)
         radius = np.linalg.norm(centered, axis=1)
 
-        angle = np.arccos(centered[:, 0] / (np.sqrt(centered[:, 1]**2 + centered[:, 0]**2) + 1e-10)) * np.sign(centered[:, 1] + 1e-10)
+        angle = np.arccos(centered[:, 0] / (np.sqrt(centered[:, 1]**2 + centered[:, 0]**2) + 1e-6)) * np.sign(centered[:, 1] + 1e-6)
         radius += np.cos(angle - theta) * radius * phi
         
         return np.exp(-(radius - mean)**2 / sig**2).reshape((self.N, self.N))
