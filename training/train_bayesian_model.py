@@ -24,9 +24,11 @@ from DGBaN import (
     randomized_ring_dataset,
     energy_randomized_ring_dataset,
     pattern_randomized_ring_dataset,
+    multi_randomized_ring_dataset,
     DGBaNR,
     big_DGBaNR,
-    half_DGBaNR
+    half_DGBaNR,
+    multi_half_DGBaNR
 )
 
 
@@ -96,6 +98,8 @@ def train_model(
         data_gen = energy_randomized_ring_dataset(N=N)
     elif data_type == 'pattern_random':
         data_gen = pattern_randomized_ring_dataset(N=N)
+    elif data_type == 'multi_random':
+        data_gen = multi_randomized_ring_dataset(N=N)
 
     train_loader, test_loader = data_gen.generate_dataset(data_size=data_size, batch_size=batch_size, seed=random_seed, device=device)
 
@@ -107,6 +111,8 @@ def train_model(
         generator = big_DGBaNR(data_gen.n_features, N, activation_function).to(device)
     elif model_name == 'half_DGBaNR':
         generator = half_DGBaNR(data_gen.n_features, N, activation_function).to(device)
+    elif model_name == 'multi_half_DGBaNR':
+        generator = multi_half_DGBaNR(data_gen.n_features, N, activation_function).to(device)
 
     # generator = torch.compile(generator) # supposed to improve training time (pytorch 2.0 feature)
 

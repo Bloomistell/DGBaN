@@ -135,23 +135,33 @@ class big_DGBaNR(torch.nn.Module): # R for reparametrization
 
         
 
-class half_DGBaNR(torch.nn.Module): # the idea for this one is to keep the conv part deterministic, because the image pattern as wholes are submitted to probabilistic appearences
+class multi_half_DGBaNR(torch.nn.Module): # the idea for this one is to keep the conv part deterministic, because the image pattern as wholes are submitted to probabilistic appearences
     def __init__(self, input_size, img_size, activation_function):
-        super(half_DGBaNR, self).__init__()
+        super(multi_half_DGBaNR, self).__init__()
 
         self.img_size = img_size
 
-        self.linear1 = BayesLinearR(input_size, 72)
-        self.linear2 = BayesLinearR(72, 864)
-        self.linear3 = BayesLinearR(864, 512 * 4 * 4)
+        self.linear_1 = nn.Linear(input_size, 54)
+        self.linear_2 = nn.Linear(input_size, 54)
 
-        self.convs = nn.Sequential(
+        self.linear_layers = nn.Sequential(
+            nn.ReLU(),
+            nn.Linear(108, 972),
+            nn.ReLU(),
+            nn.Linear(972, 512 * 4 * 4),
+            nn.ReLU()
+        )
+
+        self.conv_layers = nn.Sequential(
             nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(256),
+            nn.ReLU(),
             nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(128),
-            nn.ConvTranspose2d(128, 1, kernel_size=4, stride=2, padding=1)
+            nn.ReLU()
         )
+
+        self.bayes_conv = BayesConvT2dR(128, 1)
 
         if activation_function == 'sigmoid':
             self.activation_function = torch.sigmoid
@@ -159,24 +169,18 @@ class half_DGBaNR(torch.nn.Module): # the idea for this one is to keep the conv 
             self.activation_function = getattr(F, activation_function)
 
     def forward(self, x):
-        kl_sum = 0
+        x_1 = self.linear1(x[:6])
+        x_2 = self.linear1(x[6:])
 
-        x, kl = self.linear1(x)
-        kl_sum += kl
-        x = F.relu(x)
+        x = torch.cat((x_1, x_2), dim=1)
+        x = self.linear_layers(x)
         
-        x, kl = self.linear2(x)
-        kl_sum += kl
-        x = F.relu(x)
-        
-        x, kl = self.linear3(x)
-        kl_sum += kl
-        x = F.relu(x)
-
         x = x.view(x.size(0), 512, 4, 4)
-        x = self.convs(x)
+        x = self.conv_layers(x)
+
+        x, kl = self.bayes_conv(x)
+
         x = self.activation_function(x).squeeze(dim=1)
 
-        return x, kl_sum
+        return x, kl
 
-        
