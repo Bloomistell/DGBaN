@@ -13,8 +13,8 @@ from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
 import matplotlib.pyplot as plt
 import numpy as np
 
-from DGBaN.datasets.generate_simple_dataset import ring_dataset, randomized_ring_dataset
-from DGBaN.models import LinearGenerator, ConvGenerator
+from DGBaN.datasets.generate_simple_dataset import *
+from DGBaN.models import *
 
 
 
