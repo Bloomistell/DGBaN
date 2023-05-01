@@ -342,3 +342,58 @@ class bconv_DGBaNR(torch.nn.Module): # the idea for this one is to keep the conv
         x = self.activation_function(x).squeeze(dim=1)
 
         return x, kl_sum
+
+
+
+class bbuffer_DGBaNR(torch.nn.Module): # the idea for this one is to keep the conv part deterministic, because the image pattern as wholes are submitted to probabilistic appearences
+    def __init__(self, input_size, img_size, activation_function):
+        super(bbuffer_DGBaNR, self).__init__()
+
+        self.img_size = img_size
+
+        self.linear_layers = nn.Sequential(
+            nn.Linear(input_size, 108),
+            nn.ReLU(),
+            nn.Linear(108, 972),
+            nn.ReLU(),
+            nn.Linear(972, 512 * 4 * 4),
+            nn.ReLU()
+        )
+
+        self.conv_layers = nn.Sequential(
+            nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.ConvTranspose2d(128, 1, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(1),
+            nn.ReLU()
+        )
+
+        self.bayes_1 = BayesLinearR(1024, 1024)
+        self.bayes_2 = BayesLinearR(1024, 1024)
+
+        if activation_function == 'sigmoid':
+            self.activation_function = torch.sigmoid
+        else:
+            self.activation_function = getattr(F, activation_function)
+
+    def forward(self, x):
+        x = self.linear_layers(x)
+
+        x = x.view(x.size(0), 512, 4, 4)
+        x = self.conv_layers(x)
+        
+        kl_sum = 0
+        x = x.flatten(start_dim=1)
+        x, kl = self.bayes_1(x)
+        kl_sum += kl
+        x = F.relu(x)
+        x, kl = self.bayes_2(x)
+        kl_sum += kl
+
+        x = self.activation_function(x)
+
+        return x.reshape(x.size(0), 32, 32), kl_sum

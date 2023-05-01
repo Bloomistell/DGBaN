@@ -4,7 +4,7 @@
 #SBATCH --time=20:00:00
 #SBATCH --mem=32GB
 #SBATCH --cpus-per-task=4
-#SBATCH -o /home/J000000000007/DGBaN_project/run2_log.stdout
+#SBATCH -o /home/J000000000007/DGBaN_project/run_log.stdout
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export CUDA_VISIBLE_DEVICES=1
@@ -14,14 +14,14 @@ conda activate DGBaN
 
 cd /home/J000000000007/DGBaN_project/DGBaN/
 python3 -u training/train_bayesian_model.py \
- -t multi_random_ring \
- -n multi_b1conv_DGBaNR \
+ -t single_random_ring \
+ -n bbuffer_DGBaNR \
  -a sigmoid \
  --no-pre_trained \
  -e 1000 \
- -d 640000 \
- -b 32 \
+ -d 64000 \
+ -b 64 \
  -o Adam \
  -l mse_loss \
- -mc 3 \
+ -mc 5 \
  -i 1
