@@ -1,131 +1,201 @@
 import sys
 sys.path.append('..')
-
+import os
+import time
 import argparse
+import pickle
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-
-from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
+from torch.utils.tensorboard import SummaryWriter
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from DGBaN.datasets.generate_simple_dataset import *
-from DGBaN.models import *
+from DGBaN import (
+    generate_simple_dataset,
+    deterministic_models
+)
 
 
 
 def train_model(
-    data_type='Simple',
-    model_name='Conv',
-    model_path='',
-    save_model='',
-    data_size=10_000,
-    epochs=10,
+    data_type='energy_random',
+    model_name='DGBaNR',
+    activation_function='sigmoid',
+    pre_trained=True,
+    pre_trained_id='max',
+    save_path='../save_data',
+    data_size=64000,
+    epochs=200,
     batch_size=64,
+    optim_name='Adam',
+    loss_name='mse_loss',
     lr=1e-2,
-    num_workers=8,
     train_fraction=0.8,
-    save_interval=20,
-    output_dir="",
+    save_interval=1,
     random_seed=42
 ):
+    print(
+    f"""
+    TRAINING SUMMARY:
+        data_type (-t): {data_type}
+        model_name (-n): {model_name}
+        activation_function (-a): {activation_function}
+        pre_trained (-pt): {pre_trained}
+        pre_trained_id (-id): {pre_trained_id}
+        save_path (-s): {save_path}
+        data_size (-d): {data_size}
+        epochs (-e): {epochs}
+        batch_size (-b): {batch_size}
+        optim_name (-o): {optim_name}
+        loss_name (-l): {loss_name}
+        lr (-lr): {lr}
+        train_fraction (-f): {train_fraction}
+        save_interval (-i): {save_interval}
+        random_seed (-r): {random_seed}
+        """
+    )
+
+    # proceed = None
+    # yes = ['', 'yes', 'y']
+    # no = ['no', 'n']
+    # while proceed not in yes and proceed not in no:
+    #     proceed = input('Proceed ([y]/n)? ').lower()
+    #     if proceed in no:
+    #         print('Aborting...')
+    #         return
+
+    writer = SummaryWriter(
+        f'{save_path}/{data_type}/{optim_name}_{loss_name}/{model_name}_{activation_function}/tensorboard/'
+    )
+
+
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     torch.device(device)
 
 
-    # create a simplistic ring dataset
+    ### load dataset ###
     N = 32
-    if data_type == 'Simple':
-        dataset_generator = ring_dataset(N=N)
-    elif data_type == 'Random':
-        dataset_generator = randomized_ring_dataset(N=N)
-
-    train_loader, test_loader = dataset_generator.generate_dataset(data_size=data_size, batch_size=batch_size, seed=random_seed, device=device)
-    train_loader
-    test_loader
+    data_gen = getattr(generate_simple_dataset, data_type)(N, save_path, train_fraction)
+    train_loader, test_loader = data_gen.generate_dataset(data_size=data_size, batch_size=batch_size, noise=False, seed=random_seed, device=device)
 
 
-    if model_name == 'Linear':
-        generator = LinearGenerator(dataset_generator.n_features, img_size=N).to(device)
-    elif model_name == 'Conv':
-        generator = ConvGenerator(dataset_generator.n_features, img_size=N).to(device)
+    ### load model ###
+    generator = getattr(deterministic_models, model_name)(data_gen.n_features, N, activation_function)
 
-    if model_path: # use a pretrained model
+    # example_data, _ = next(iter(test_loader))
+    # writer.add_graph(generator, example_data.cpu())
+
+    # generator = torch.compile(generator) # supposed to improve training time (pytorch 2.0 feature)
+
+    # use a pretrained model
+    max_id = -1
+    model_path = ''
+    for root, dirs, files in os.walk(save_path):
+        for name in files:
+            if name.startswith(f'{model_name}_{activation_function}'):
+                _id = int(name.split('_')[-1][:-3])
+                if max_id < _id:
+                    max_id = _id
+
+                    if pre_trained_id == 'max':
+                        model_path = os.path.join(root, name)
+
+                    elif int(pre_trained_id) == _id:
+                        model_path = os.path.join(root, name)
+                
+    if model_path != '' and pre_trained:
+        print(f'\nUsing pretrained model at location: {model_path}\n''')
         generator.load_state_dict(torch.load(model_path))
 
-    optimizer = optim.Adam(generator.parameters(), lr=lr)
-    criterion = nn.MSELoss()
+
+    ### set optimizer and loss ###
+    optimizer = getattr(optim, optim_name)(generator.parameters(), lr=lr)
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+
+    loss_fn = getattr(F, loss_name)
 
 
-    train_loss = []
-    test_loss = []
+    ### training loop ###
+    generator.to(device)
+    generator.train()
+
+    train_steps = len(train_loader)
+    test_steps = len(test_loader)
+
     for epoch in range(epochs):
-        total_loss = 0
-        for i, (features, real_images) in enumerate(train_loader):
+        print(f'\nEPOCH {epoch + 1}:')
+        train_loss = 0.
+        start = time.time()
+        for i, (X, target) in enumerate(train_loader):
             optimizer.zero_grad()
 
-            generated_images = generator(features)
-            loss = criterion(generated_images, real_images)
-            total_loss += loss.item()
+            pred = generator(X)
+
+            loss = loss_fn(pred, target)
+            train_loss += loss.item()
 
             loss.backward()
             optimizer.step()
 
-        train_loss.append(total_loss / batch_size)
+            if i % 100 == 0 and i != 0:
+                end = time.time()
+                batch_speed = 100 / (end - start)
+                progress = int((i / train_steps) * 20)
+                bar = "\u2588" * progress + '-' * (20 - progress)
+                print(f'Training: |{bar}| {5 * progress}% - loss {train_loss / 100:.2g} - speed {batch_speed:.2f} batch/s')
+                writer.add_scalar('training loss', train_loss / 100, epoch * train_steps + i)
+                train_loss = 0.
+                start = time.time()
 
-        with torch.no_grad(): # evaluate model on test data
-            total_loss = 0
-            for i, (features, real_images) in enumerate(test_loader):
-                generated_images = generator(features)
-                loss = criterion(generated_images, real_images)
-                total_loss += loss.item()
-        
-        test_loss.append(total_loss / batch_size)
+            if i % 1000 == 0 and i != 0:
+                test_loss = 0.
+                with torch.no_grad(): # evaluate model on test data
+                    for _, (X, target) in enumerate(test_loader):
+                        pred = generator(X)
 
-        clear_output()
-        print(f'EPOCH {epoch+1}: train loss - {train_loss[-1]:.2g}, tentest loss - {test_loss[-1]:.2g}')
+                        loss = loss_fn(pred, target)
+                        test_loss += loss.item()
 
-        # plt.figure()
-        # plt.plot(np.arange(len(train_loss)), train_loss, label='train')
-        # plt.plot(np.arange(len(test_loss)), test_loss, label='test')
-        # plt.legend()
-        # plt.savefig('./figures/train_test.png')
+                    writer.add_scalar('testing loss', test_loss / test_steps, epoch * train_steps + i)
+                    print(f'\nValidation: loss {test_loss / test_steps:.2g}\n')
 
-        if epoch % 20 == 0 and epoch != 0:
-            lr *= 1e-1
-            optimizer = optim.Adam(generator.parameters(), lr=lr)
-        
-        if save_model and epoch % save_interval == 0 and epoch != 0:
-            torch.save(generator.state_dict(), save_model)
+        scheduler.step()
+                
+        if epoch % save_interval == 0:
+            torch.save(
+                generator.state_dict(),
+                f'{save_path}/{data_type}/{optim_name}_{loss_name}/{model_name}_{activation_function}/{model_name}_{activation_function}_{max_id+1}.pt'
+            )
 
-
-    generator.eval()
-    return generator, train_loss, test_loss, dataset_generator
 
 
 if __name__ == "__main__" :
 
-    parser = argparse.ArgumentParser(description='Train different generative architectures on simplistic rings.')
-    parser.add_argument('-t', '--data_type', type=str, help="Type of data", default ="", required=False)
-    parser.add_argument('-n', '--model_name', type=str, help="name of the model", default ="", required=False)
-    parser.add_argument('-m', '--model_path', type=str, help="Pretained model path", default ="", required=False)
-    parser.add_argument('-s', '--save_model', type=str, help="Pretained model path", default ="", required=False)
-    parser.add_argument('-d', '--data_size', type=int, help="Number of events to train on", default=10_000, required=False)
-    parser.add_argument('-e', '--epochs', type=int, help="Number of epochs to train for", default=10, required=False)
-    parser.add_argument('-b', '--batch_size', type=int, help="Batch size", default=64, required=False)
-    parser.add_argument('-l', '--lr', type=int, help="Learning rate", default=1e-2, required=False)
-    parser.add_argument('-j', '--num_workers', type=int, help="Number of CPUs for loading data", default=8, required=False)
-    parser.add_argument('-f', '--train_fraction', type=float, help="Fraction of data used for training", default=0.8, required=False)
-    parser.add_argument('-i', '--save_interval', type=int, help="Save network state every <save_interval> iterations", default=20, required=False)
-    parser.add_argument('-r', '--random_seed', type=int, help="Random seed", default=42, required=False)
+    parser = argparse.ArgumentParser(description='Train different generative architectures on simplistic rings.', argument_default=argparse.SUPPRESS)
+    parser.add_argument('-t', '--data_type', type=str, help="Type of data")
+    parser.add_argument('-n', '--model_name', type=str, help="Name of the model")
+    parser.add_argument('-a', '--activation_function', type=str, help="Activation function")
+    parser.add_argument('--pre_trained', type=bool, action=argparse.BooleanOptionalAction, help="If we use a pretrained model")
+    parser.add_argument('-id', '--pre_trained_id', type=str, help="If you want a specific pre-trained model")
+    parser.add_argument('-s', '--save_path', type=str, help="Path where all the data is saved")
+    parser.add_argument('-d', '--data_size', type=int, help="Number of events to train on")
+    parser.add_argument('-e', '--epochs', type=int, help="Number of epochs to train for")
+    parser.add_argument('-b', '--batch_size', type=int, help="Batch size")
+    parser.add_argument('-o', '--optim_name', type=str, help="Name of the optimizer")
+    parser.add_argument('-l', '--loss_name', type=str, help="Name of the loss function")
+    parser.add_argument('-lr', '--lr', type=float, help="Learning rate")
+    parser.add_argument('-f', '--train_fraction', type=float, help="Fraction of data used for training")
+    parser.add_argument('-i', '--save_interval', type=int, help="Save network state every <save_interval> iterations")
+    parser.add_argument('-r', '--random_seed', type=int, help="Random seed")
 
     args = parser.parse_args()
-    print(vars(args))
-    
+
     train_model(**vars(args))
 
-    # python3 train_model.py -t Random -n DGBaN -s ../save_model/first_DGBaN.pt -e 200 -d 10000 -b 64
+    # python3 training/train_bayesian_model.py -t energy_random -n DGBaNR -e 200 -d 64000 -b 64 -o Adam -l mse_loss -mc 20

@@ -1,4 +1,6 @@
 import torch
+from torch import nn
+import torch.nn.functional as F
 from torch.nn import (
     Linear,
     Sequential,
@@ -74,3 +76,45 @@ class ConvGenerator(torch.nn.Module):
         img = self.conv_net(x.view(x.size(0), 512, 4, 4)).squeeze()
         return img
 
+
+
+class bbuffer_DGBaNR_base(torch.nn.Module):
+    def __init__(self, input_size, img_size, activation_function):
+        super(bbuffer_DGBaNR_base, self).__init__()
+
+        self.img_size = img_size
+
+        self.linear_layers = nn.Sequential(
+            nn.Linear(input_size, 108),
+            nn.ReLU(),
+            nn.Linear(108, 972),
+            nn.ReLU(),
+            nn.Linear(972, 512 * 4 * 4),
+            nn.ReLU()
+        )
+
+        self.conv_layers = nn.Sequential(
+            nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.ConvTranspose2d(128, 1, kernel_size=4, stride=2, padding=1)
+        )
+
+        if activation_function == 'sigmoid':
+            self.activation_function = torch.sigmoid
+        else:
+            self.activation_function = getattr(F, activation_function)
+
+    def forward(self, x):
+        x = self.linear_layers(x)
+
+        x = x.view(x.size(0), 512, 4, 4)
+        x = self.conv_layers(x)
+        
+        x = self.activation_function(x)
+
+        return x.squeeze(dim=1)
+    

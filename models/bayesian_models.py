@@ -82,7 +82,7 @@ class DGBaNR(torch.nn.Module): # R for reparametrization
 
 
 class big_DGBaNR(torch.nn.Module): # R for reparametrization
-    def __init__(self, input_size, img_size, activation_function):
+    def __init__(self, input_size, img_size, activation_function, pre_trained_base=False):
         super(big_DGBaNR, self).__init__()
 
         self.img_size = img_size
@@ -345,8 +345,8 @@ class bconv_DGBaNR(torch.nn.Module): # the idea for this one is to keep the conv
 
 
 
-class bbuffer_DGBaNR(torch.nn.Module): # the idea for this one is to keep the conv part deterministic, because the image pattern as wholes are submitted to probabilistic appearences
-    def __init__(self, input_size, img_size, activation_function):
+class bbuffer_DGBaNR(torch.nn.Module): 
+    def __init__(self, input_size, img_size, activation_function, pre_trained_base=False):
         super(bbuffer_DGBaNR, self).__init__()
 
         self.img_size = img_size
@@ -367,13 +367,34 @@ class bbuffer_DGBaNR(torch.nn.Module): # the idea for this one is to keep the co
             nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.ConvTranspose2d(128, 1, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(1),
-            nn.ReLU()
+            nn.ConvTranspose2d(128, 1, kernel_size=4, stride=2, padding=1)
         )
 
-        self.bayes_1 = BayesLinearR(1024, 1024)
-        self.bayes_2 = BayesLinearR(1024, 1024)
+        if pre_trained_base:
+            for param in self.linear_layers.parameters():
+                param.requires_grad = False
+
+            for param in self.conv_layers.parameters():
+                param.requires_grad = False
+
+        self.bayes_1 = LinearReparameterization(
+            1024,
+            1024,
+            prior_mean=0,
+            prior_variance=1,
+            posterior_mu_init=0,
+            posterior_rho_init=-0.3
+            )
+        self.batch_norm_1 = nn.BatchNorm1d(1024)
+        self.bayes_2 = LinearReparameterization(
+            1024,
+            1024,
+            prior_mean=0,
+            prior_variance=1,
+            posterior_mu_init=0,
+            posterior_rho_init=-0.3
+        )
+        self.batch_norm_2 = nn.BatchNorm1d(1024)
 
         if activation_function == 'sigmoid':
             self.activation_function = torch.sigmoid
@@ -390,9 +411,10 @@ class bbuffer_DGBaNR(torch.nn.Module): # the idea for this one is to keep the co
         x = x.flatten(start_dim=1)
         x, kl = self.bayes_1(x)
         kl_sum += kl
-        x = F.relu(x)
+        x = self.batch_norm_1(x)
         x, kl = self.bayes_2(x)
         kl_sum += kl
+        x = self.batch_norm_2(x)
 
         x = self.activation_function(x)
 

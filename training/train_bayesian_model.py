@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import sys
 sys.path.append('..')
 import os
@@ -17,7 +15,6 @@ from torch.utils.tensorboard import SummaryWriter
 
 from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from DGBaN import (
@@ -31,7 +28,8 @@ def train_bayes_model(
     data_type='energy_random',
     model_name='DGBaNR',
     activation_function='sigmoid',
-    pre_trained=True,
+    use_base=False,
+    pre_trained=False,
     pre_trained_id='max',
     save_path='../save_data',
     data_size=64000,
@@ -53,7 +51,8 @@ def train_bayes_model(
         data_type (-t): {data_type}
         model_name (-n): {model_name}
         activation_function (-a): {activation_function}
-        pre_trained (-pt): {pre_trained}
+        use_base (--use_base): {use_base}
+        pre_trained (--pre_trained): {pre_trained}
         pre_trained_id (-id): {pre_trained_id}
         save_path (-s): {save_path}
         data_size (-d): {data_size}
@@ -80,10 +79,6 @@ def train_bayes_model(
     #         print('Aborting...')
     #         return
 
-    writer = SummaryWriter(
-        f'{save_path}/{data_type}/{optim_name}_{loss_name}_{num_mc}/{model_name}_{activation_function}/tensorboard/'
-    )
-
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     torch.device(device)
@@ -96,19 +91,25 @@ def train_bayes_model(
 
 
     ### load model ###
-    generator = getattr(bayesian_models, model_name)(data_gen.n_features, N, activation_function)
+    generator = getattr(bayesian_models, model_name)(data_gen.n_features, N, activation_function, pre_trained_base=use_base)
 
     # example_data, _ = next(iter(test_loader))
     # writer.add_graph(generator, example_data.cpu())
 
-    generator = torch.compile(generator) # supposed to improve training time (pytorch 2.0 feature)
+    # generator = torch.compile(generator) # supposed to improve training time (pytorch 2.0 feature)
 
     # use a pretrained model
     max_id = -1
     model_path = ''
+    start_name = f'{model_name}_{activation_function}'
+
+    max_base_id = -1
+    base_path = ''
+    base_name = f'{model_name}_base_{activation_function}'
+
     for root, dirs, files in os.walk(save_path):
         for name in files:
-            if name.startswith(f'{model_name}_{activation_function}'):
+            if name.startswith(start_name):
                 _id = int(name.split('_')[-1][:-3])
                 if max_id < _id:
                     max_id = _id
@@ -118,10 +119,36 @@ def train_bayes_model(
 
                     elif int(pre_trained_id) == _id:
                         model_path = os.path.join(root, name)
+                        
+            if name.startswith(base_name):
+                _id = int(name.split('_')[-1][:-3])
+                if max_base_id < _id:
+                    max_base_id = _id
+
+                    if pre_trained_id == 'max':
+                        base_path = os.path.join(root, name)
+
+                    elif int(pre_trained_id) == _id:
+                        base_path = os.path.join(root, name)
                 
-    if model_path != '' and pre_trained:
+    if use_base:
+        weights = generator.state_dict()
+        pre_trained_weights = torch.load(base_path)
+
+        for key in weights.keys():
+            if key not in pre_trained_weights.keys():
+                pre_trained_weights[key] = weights[key]
+                
+        print(f'\nUsing pretrained model at location: {base_path}\n''')
+        generator.load_state_dict(pre_trained_weights)
+
+    elif model_path != '' and pre_trained:
         print(f'\nUsing pretrained model at location: {model_path}\n''')
         generator.load_state_dict(torch.load(model_path))
+
+    writer = SummaryWriter(
+        f'{save_path}/{data_type}/{optim_name}_{loss_name}_{num_mc}/{model_name}_{activation_function}/tensorboard_{max_id+1}/'
+    )
 
 
     ### set optimizer and loss ###
@@ -236,6 +263,7 @@ if __name__ == "__main__" :
     parser.add_argument('-t', '--data_type', type=str, help="Type of data")
     parser.add_argument('-n', '--model_name', type=str, help="Name of the model")
     parser.add_argument('-a', '--activation_function', type=str, help="Activation function")
+    parser.add_argument('--use_base', type=bool, action=argparse.BooleanOptionalAction, help="Using a deterministic base model for the deterministic layers")
     parser.add_argument('--pre_trained', type=bool, action=argparse.BooleanOptionalAction, help="If we use a pretrained model")
     parser.add_argument('-id', '--pre_trained_id', type=str, help="If you want a specific pre-trained model")
     parser.add_argument('-s', '--save_path', type=str, help="Path where all the data is saved")

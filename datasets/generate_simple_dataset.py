@@ -490,9 +490,13 @@ class single_random_ring():
         self.img_coor = np.array([(i, j) for i in range(self.N) for j in range(self.N)])
         self.n_features = 6
 
-    def generate_dataset(self, data_size=10_000, batch_size=64, seed=42, device='cpu', test_return=False):
-        features_path = f'{self.save_path}/{self.__class__.__name__}/features_{self.N}_{data_size}_{seed}.npy'
-        imgs_path = f'{self.save_path}/{self.__class__.__name__}/images_{self.N}_{data_size}_{seed}.npy'
+    def generate_dataset(self, data_size=10_000, batch_size=64, noise=True, seed=42, device='cpu', test_return=False):
+        if noise:
+            noise_tag = 'noise_'
+        else:
+            noise_tag = ''
+        features_path = f'{self.save_path}/{self.__class__.__name__}/features_{self.N}_{data_size}_{noise_tag}{seed}.npy'
+        imgs_path = f'{self.save_path}/{self.__class__.__name__}/images_{self.N}_{data_size}_{noise_tag}{seed}.npy'
         if os.path.exists(features_path):
             features = np.load(features_path)
             self.imgs = np.load(imgs_path)
@@ -508,13 +512,7 @@ class single_random_ring():
             sig_1 = np.random.choice(self.sigs, size=data_size)
             theta_1 = np.random.choice(self.thetas, size=data_size)
             phi_1 = np.random.choice(self.phis, size=data_size)
-
-            imgs_1 = self.gaussian_rings(data_size, center_1, mean_1, sig_1, theta_1, phi_1)
-
-            val = np.arange(0, 2, 0.01)
-            distr = np.exp(-(val - 1)**2 / 0.3**2)
-            kernel = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)]) # adds gaussian noise
-
+            
             features = np.concatenate([
                 center_x_1.reshape(-1, 1),
                 center_y_1.reshape(-1, 1),
@@ -526,7 +524,18 @@ class single_random_ring():
             if not test_return:
                 np.save(features_path, features)
 
-            self.imgs = (imgs_1 * kernel).reshape((data_size, self.N, self.N)) / 2
+            imgs_1 = self.gaussian_rings(data_size, center_1, mean_1, sig_1, theta_1, phi_1)
+
+            if noise:
+                val = np.arange(0, 2, 0.01)
+                distr = np.exp(-(val - 1)**2 / 0.3**2)
+                kernel = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)]) # adds gaussian noise
+
+                self.imgs = (imgs_1 * kernel).reshape((data_size, self.N, self.N)) / 2
+
+            else:
+                self.imgs = imgs_1.reshape((data_size, self.N, self.N)) / 2
+
             if not test_return:
                 np.save(imgs_path, self.imgs)
 
