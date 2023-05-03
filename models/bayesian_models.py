@@ -395,6 +395,24 @@ class bbuffer_DGBaNR(torch.nn.Module):
             posterior_rho_init=-0.3
         )
         self.batch_norm_2 = nn.BatchNorm1d(1024)
+        self.bayes_3 = LinearReparameterization(
+            1024,
+            1024,
+            prior_mean=0,
+            prior_variance=1,
+            posterior_mu_init=0,
+            posterior_rho_init=-0.3
+        )
+        self.batch_norm_3 = nn.BatchNorm1d(1024)
+        self.bayes_4 = LinearReparameterization(
+            1024,
+            1024,
+            prior_mean=0,
+            prior_variance=1,
+            posterior_mu_init=0,
+            posterior_rho_init=-0.3
+        )
+        self.batch_norm_4 = nn.BatchNorm1d(1024)
 
         if activation_function == 'sigmoid':
             self.activation_function = torch.sigmoid
@@ -415,7 +433,106 @@ class bbuffer_DGBaNR(torch.nn.Module):
         x, kl = self.bayes_2(x)
         kl_sum += kl
         x = self.batch_norm_2(x)
+        x, kl = self.bayes_3(x)
+        kl_sum += kl
+        x = self.batch_norm_3(x)
+        x, kl = self.bayes_4(x)
+        kl_sum += kl
+        x = self.batch_norm_4(x)
 
         x = self.activation_function(x)
 
         return x.reshape(x.size(0), 32, 32), kl_sum
+    
+    
+
+class recall_bbuffer_DGBaNR(torch.nn.Module): 
+    def __init__(self, input_size, img_size, activation_function, pre_trained_base=False):
+        super(recall_bbuffer_DGBaNR, self).__init__()
+
+        self.img_size = img_size
+
+        self.linear_layers = nn.Sequential(
+            nn.Linear(input_size, 108),
+            nn.ReLU(),
+            nn.Linear(108, 972),
+            nn.ReLU(),
+            nn.Linear(972, 512 * 4 * 4),
+            nn.ReLU()
+        )
+
+        self.conv_layers = nn.Sequential(
+            nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.ConvTranspose2d(128, 1, kernel_size=4, stride=2, padding=1)
+        )
+
+        if pre_trained_base:
+            for param in self.linear_layers.parameters():
+                param.requires_grad = False
+
+            for param in self.conv_layers.parameters():
+                param.requires_grad = False
+
+        self.bayes_1 = LinearReparameterization(
+            input_size + 1024,
+            1024,
+            prior_mean=0,
+            prior_variance=1,
+            posterior_mu_init=0,
+            posterior_rho_init=-0.3
+            )
+        self.batch_norm_1 = nn.BatchNorm1d(1024)
+        self.bayes_2 = LinearReparameterization(
+            1024,
+            1024,
+            prior_mean=0,
+            prior_variance=1,
+            posterior_mu_init=0,
+            posterior_rho_init=-0.3
+        )
+        self.batch_norm_2 = nn.BatchNorm1d(1024)
+        self.bayes_3 = LinearReparameterization(
+            1024,
+            1024,
+            prior_mean=0,
+            prior_variance=1,
+            posterior_mu_init=0,
+            posterior_rho_init=-0.3
+        )
+        self.batch_norm_3 = nn.BatchNorm1d(1024)
+
+        if activation_function == 'sigmoid':
+            self.activation_function = torch.sigmoid
+        else:
+            self.activation_function = getattr(F, activation_function)
+
+    def forward(self, x):
+        z = x.clone()
+        x = self.linear_layers(x)
+
+        x = x.view(x.size(0), 512, 4, 4)
+        x = self.conv_layers(x)
+        
+        kl_sum = 0
+        x = x.flatten(start_dim=1)
+        x = torch.concat([x, z], dim=1)
+        x, kl = self.bayes_1(x)
+        kl_sum += kl
+        x = self.batch_norm_1(x)
+        x, kl = self.bayes_2(x)
+        kl_sum += kl
+        x = self.batch_norm_2(x)
+        x, kl = self.bayes_3(x)
+        kl_sum += kl
+        x = self.batch_norm_3(x)
+
+        x = self.activation_function(x)
+
+        return x.reshape(x.size(0), 32, 32), kl_sum
+    
+    

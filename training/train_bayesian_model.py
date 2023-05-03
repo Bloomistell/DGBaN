@@ -139,21 +139,37 @@ def train_bayes_model(
             if key not in pre_trained_weights.keys():
                 pre_trained_weights[key] = weights[key]
                 
-        print(f'\nUsing pretrained model at location: {base_path}\n''')
+        print(f'\nUsing pretrained model at location: {base_path}\n')
         generator.load_state_dict(pre_trained_weights)
 
     elif model_path != '' and pre_trained:
-        print(f'\nUsing pretrained model at location: {model_path}\n''')
+        print(f'\nUsing pretrained model at location: {model_path}\n')
         generator.load_state_dict(torch.load(model_path))
+        
+    print(f'\nModel path: {save_path}/{data_type}/{optim_name}_{loss_name}_{num_mc}/{model_name}_{activation_function}/{model_name}_{activation_function}_{max_id+1}.pt\n')
 
     writer = SummaryWriter(
         f'{save_path}/{data_type}/{optim_name}_{loss_name}_{num_mc}/{model_name}_{activation_function}/tensorboard_{max_id+1}/'
+    )
+
+    torch.save(
+        generator.state_dict(),
+        f'{save_path}/{data_type}/{optim_name}_{loss_name}_{num_mc}/{model_name}_{activation_function}/{model_name}_{activation_function}_{max_id+1}.pt'
     )
 
 
     ### set optimizer and loss ###
     optimizer = getattr(optim, optim_name)(generator.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+
+    # class CustomLoss(nn.Module):
+    #     def __init__(self):
+    #         super(CustomLoss, self).__init__()
+
+    #     def forward(self, output, target):
+    #         criterion = getattr(F, loss_name)
+    #         loss = criterion(output, target)
+    #         return -torch.log(1 - loss, dim=1)
 
     loss_fn = getattr(F, loss_name)
 
@@ -181,6 +197,9 @@ def train_bayes_model(
     for epoch in range(epochs):
         print(f'\nEPOCH {epoch + 1}:')
         train_loss = 0.
+        img_loss = 0.
+        kl_loss = 0.
+
         start = time.time()
         for i, (X, target) in enumerate(train_loader):
             if mean_training:
@@ -196,8 +215,12 @@ def train_bayes_model(
                 pred = torch.mean(torch.stack(preds), dim=0)
                 kl = torch.mean(torch.stack(kls), dim=0)
 
-                loss = loss_fn(pred, target) + (kl / batch_size)
+                loss_ = loss_fn(pred, target)
+                loss = loss_ + (kl / batch_size)
+
                 train_loss += loss.item()
+                img_loss += loss_.item()
+                kl_loss += (kl / batch_size).item()
 
                 loss.backward()
                 optimizer.step()
@@ -207,20 +230,29 @@ def train_bayes_model(
 
                 pred, kl = generator(X)
 
-                loss = loss_fn(pred, target) + (kl / batch_size)
+                img = loss_fn(pred, target)
+                loss = img + (kl / batch_size)
+
                 train_loss += loss.item()
+                img_loss += img.item()
+                kl_loss += (kl / batch_size).item()
 
                 loss.backward()
                 optimizer.step()
 
             if i % 100 == 0 and i != 0:
+                # img_factor, kl_factor = kl_factor, img_factor
                 end = time.time()
                 batch_speed = 100 / (end - start)
                 progress = int((i / train_steps) * 20)
                 bar = "\u2588" * progress + '-' * (20 - progress)
-                print(f'Training: |{bar}| {5 * progress}% - loss {train_loss / (100 * 2):.2g} - speed {batch_speed:.2f} batch/s')
+                print(f'Training: |{bar}| {5 * progress}% - loss {train_loss / (100 * 2):.2g} - img {img_loss / (100 * 2):.2g} - kl {kl_loss / (100 * 2):.2g} - speed {batch_speed:.2f} batch/s')
                 writer.add_scalar('training loss', train_loss / (100 * 2), epoch * train_steps + i)
+                writer.add_scalar('img loss', img_loss / (100 * 2), epoch * train_steps + i)
+                writer.add_scalar('kl loss', kl_loss / (100 * 2), epoch * train_steps + i)
                 train_loss = 0.
+                img_loss = 0.
+                kl_loss = 0.
                 start = time.time()
 
             # if i % 1000 == 0 and i != 0:
@@ -274,6 +306,8 @@ if __name__ == "__main__" :
     parser.add_argument('-l', '--loss_name', type=str, help="Name of the loss function")
     parser.add_argument('-mc', '--num_mc', type=int, help="Number of Monte Carlo runs during training")
     parser.add_argument('-lr', '--lr', type=float, help="Learning rate")
+    parser.add_argument('--mean_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with the average of several mc")
+    parser.add_argument('--std_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with one mc")
     parser.add_argument('-f', '--train_fraction', type=float, help="Fraction of data used for training")
     parser.add_argument('-i', '--save_interval', type=int, help="Save network state every <save_interval> iterations")
     parser.add_argument('-r', '--random_seed', type=int, help="Random seed")
