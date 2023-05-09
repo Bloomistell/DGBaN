@@ -490,9 +490,9 @@ class single_random_ring():
         self.img_coor = np.array([(i, j) for i in range(self.N) for j in range(self.N)])
         self.n_features = 6
 
-    def generate_dataset(self, data_size=10_000, batch_size=64, noise=True, seed=42, device='cpu', test_return=False):
+    def generate_dataset(self, data_size=10_000, batch_size=64, noise=True, sigma=0.3, seed=42, device='cpu', test_return=False):
         if noise:
-            noise_tag = 'noise_'
+            noise_tag = f'noise_{sigma}_'
         else:
             noise_tag = ''
         features_path = f'{self.save_path}/{self.__class__.__name__}/features_{self.N}_{data_size}_{noise_tag}{seed}.npy'
@@ -528,7 +528,7 @@ class single_random_ring():
 
             if noise:
                 val = np.arange(0, 2, 0.01)
-                distr = np.exp(-(val - 1)**2 / 0.3**2)
+                distr = np.exp(-(val - 1)**2 / sigma**2)
                 kernel = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)]) # adds gaussian noise
 
                 self.imgs = (imgs_1 * kernel).reshape((data_size, self.N, self.N)) / 2

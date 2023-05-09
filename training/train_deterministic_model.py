@@ -20,7 +20,7 @@ from DGBaN import (
     generate_simple_dataset,
     deterministic_models
 )
-
+import losses
 
 
 def train_model(
@@ -52,10 +52,10 @@ def train_model(
         data_size (-d): {data_size}
         epochs (-e): {epochs}
         batch_size (-b): {batch_size}
+        train_fraction (-f): {train_fraction}
         optim_name (-o): {optim_name}
         loss_name (-l): {loss_name}
         lr (-lr): {lr}
-        train_fraction (-f): {train_fraction}
         save_interval (-i): {save_interval}
         random_seed (-r): {random_seed}
         """
@@ -118,7 +118,14 @@ def train_model(
     optimizer = getattr(optim, optim_name)(generator.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 
-    loss_fn = getattr(F, loss_name)
+    if loss_name in dir(losses):
+        loss_fn = getattr(losses, loss_name)(N, device=device)
+    
+    elif loss_name in dir(F):
+        loss_fn = getattr(F, loss_name)
+
+    else:
+        raise NameError(f'No loss named "{loss_name}" found.')
 
 
     ### training loop ###
