@@ -1,3 +1,5 @@
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -25,13 +27,20 @@ class GaussianLoss(nn.Module):
         
 
 class LogL1Loss(nn.Module):
-    def __init__(self, N, sigma=0.3, device='cpu'):
+    def __init__(self, N=None, sigma=None, device=None):
         super(LogL1Loss, self).__init__()
 
     def forward(self, pred, target):
         l1_loss = 1 - F.l1_loss(pred, target) / 2
 
-        log_l1_loss = -torch.mean(torch.log(l1_loss))
+        log_l1_loss = -torch.log(l1_loss)
+
+        return log_l1_loss
+
+    def numpy_loss(self, pred, target):
+        l1_loss = 1 - np.mean(np.abs(pred - target)) / 2
+
+        log_l1_loss = -np.log(l1_loss)
 
         return log_l1_loss
 

@@ -698,42 +698,34 @@ class DGBaNR_2(torch.nn.Module): # R for reparametrization
 
         self.img_size = img_size
 
-        self.linear_1 = LinearReparameterization(input_size, 16)
-        
-        self.linear_2 = LinearReparameterization(16, 64)
-
-        self.linear_3 = LinearReparameterization(64, 256)
+        self.linear_1 = LinearReparameterization(input_size, 128)
+        self.linear_2 = LinearReparameterization(128, 1024)
+        self.linear_3 = LinearReparameterization(1024, 8192)
 
         self.conv_1 = ConvTranspose2dReparameterization(
-            in_channels=64,
-            out_channels=64,
-            kernel_size=2,
-            stride=2
+            in_channels=512,
+            out_channels=256,
+            kernel_size=4,
+            stride=2,
+            padding=0
         )
-        self.batch_norm_1 = nn.BatchNorm2d(64)
+        self.batch_norm_1 = nn.BatchNorm2d(256)
         
         self.conv_2 = ConvTranspose2dReparameterization(
-            in_channels=64,
-            out_channels=16,
-            kernel_size=2,
-            stride=2
-        )
-        self.batch_norm_2 = nn.BatchNorm2d(16)
-        
-        self.conv_3 = ConvTranspose2dReparameterization(
-            in_channels=16,
-            out_channels=4,
-            kernel_size=2,
-            stride=4
-        )
-        self.batch_norm_3 = nn.BatchNorm2d(4)
-        
-        self.conv_4 = ConvTranspose2dReparameterization(
-            in_channels=4,
-            out_channels=1,
-            kernel_size=8,
+            in_channels=256,
+            out_channels=128,
+            kernel_size=3,
             stride=2,
             padding=1
+        )
+        self.batch_norm_2 = nn.BatchNorm2d(128)
+        
+        self.conv_3 = ConvTranspose2dReparameterization(
+            in_channels=128,
+            out_channels=1,
+            kernel_size=2,
+            stride=2,
+            padding=3
         )
 
         if activation_function == 'sigmoid':
@@ -752,24 +744,23 @@ class DGBaNR_2(torch.nn.Module): # R for reparametrization
         kl_sum += kl
         x = F.relu(x)
         
-        x = x.view(x.size(0), 64, 1, 1)
+        x, kl = self.linear_3(x)
+        kl_sum += kl
+        x = F.relu(x)
+        
+        x = x.view(x.size(0), 512, 4, 4)
 
         x, kl = self.conv_1(x)
         kl_sum += kl
-        # x = self.batch_norm_1(x)
+        x = self.batch_norm_1(x)
         x = F.relu(x)
 
         x, kl = self.conv_2(x)
         kl_sum += kl
-        # x = self.batch_norm_2(x)
+        x = self.batch_norm_2(x)
         x = F.relu(x)
         
         x, kl = self.conv_3(x)
-        kl_sum += kl
-        # x = self.batch_norm_3(x)
-        x = F.relu(x)
-        
-        x, kl = self.conv_4(x)
         kl_sum += kl
 
         x = self.activation_function(x).squeeze(dim=1)

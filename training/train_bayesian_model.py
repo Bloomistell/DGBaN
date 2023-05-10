@@ -21,7 +21,7 @@ from DGBaN import (
     generate_simple_dataset,
     bayesian_models
 )
-import losses
+import DGBaN.training.losses as losses
 
 
 
@@ -253,7 +253,7 @@ TRAINING SUMMARY:
                 kl = torch.mean(torch.stack(kls), dim=0)
 
                 img = loss_fn(pred, target)
-                loss = img # * (kl / batch_size)
+                loss = img + (kl / batch_size)
 
                 train_loss += loss.item()
                 img_loss += img.item()
@@ -277,19 +277,19 @@ TRAINING SUMMARY:
                 loss.backward()
                 optimizer.step()
 
-            if i % 100 == 0 and i != 0:
+            if i % print_step == 0 and i != 0:
                 # img_factor, kl_factor = kl_factor, img_factor
                 end = time.time()
                 
-                batch_speed = 100 / (end - start)
+                batch_speed = print_step / (end - start)
                 progress = int((i / train_steps) * 50)
                 bar = "\u2588" * progress + '-' * (50 - progress)
                 
-                print(f'Training: |{bar}| {2 * progress}% - loss {train_loss / (100 * 2):.2g} - img {img_loss / (100 * 2):.2g} - kl {kl_loss / (100 * 2):.2g} - speed {batch_speed:.2f} batch/s')
+                print(f'Training: |{bar}| {2 * progress}% - loss {train_loss / (print_step * 2):.2g} - img {img_loss / (print_step * 2):.2g} - kl {kl_loss / (print_step * 2):.2g} - speed {batch_speed:.2f} batch/s')
                 
-                writer.add_scalar('training loss', train_loss / (100 * 2), epoch * train_steps + i)
-                writer.add_scalar('img loss', img_loss / (100 * 2), epoch * train_steps + i)
-                writer.add_scalar('kl loss', kl_loss / (100 * 2), epoch * train_steps + i)
+                writer.add_scalar('training loss', train_loss / (print_step * 2), epoch * train_steps + i)
+                writer.add_scalar('img loss', img_loss / (print_step * 2), epoch * train_steps + i)
+                writer.add_scalar('kl loss', kl_loss / (print_step * 2), epoch * train_steps + i)
 
                 train_loss = 0.
                 img_loss = 0.

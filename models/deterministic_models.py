@@ -124,42 +124,45 @@ class DGBaNR_2_base(torch.nn.Module):
     def __init__(self, input_size, img_size, activation_function, pre_trained_base=False):
         super(DGBaNR_2_base, self).__init__()
 
-        self.base_name = 'DGBaNR_2_base'
         self.img_size = img_size
 
-        self.linear_1 = nn.Linear(input_size, 16)
-        self.linear_2 = nn.Linear(16, 64)
+        self.linear_1 = nn.Linear(6, 128)
+        self.linear_2 = nn.Linear(128, 1024)
+        self.linear_3 = nn.Linear(1024, 8192)
 
-        self.conv_1 = nn.ConvTranspose2d(
-            in_channels=64,
-            out_channels=64,
-            kernel_size=2,
-            stride=2
+        self.unconv_1 = nn.ConvTranspose2d(
+            in_channels=512,
+            out_channels=256,
+            kernel_size=4,
+            stride=2,
+            padding=0
         )
-        self.batch_norm_1 = nn.BatchNorm2d(64)
+        self.batch_norm_1 = nn.BatchNorm2d(256)
         
-        self.conv_2 = nn.ConvTranspose2d(
-            in_channels=64,
-            out_channels=16,
-            kernel_size=2,
-            stride=2
-        )
-        self.batch_norm_2 = nn.BatchNorm2d(16)
-        
-        self.conv_3 = nn.ConvTranspose2d(
-            in_channels=16,
-            out_channels=4,
-            kernel_size=2,
-            stride=4
-        )
-        self.batch_norm_3 = nn.BatchNorm2d(4)
-        
-        self.conv_4 = nn.ConvTranspose2d(
-            in_channels=4,
-            out_channels=1,
-            kernel_size=8,
+        self.unconv_2 = nn.ConvTranspose2d(
+            in_channels=256,
+            out_channels=128,
+            kernel_size=3,
             stride=2,
             padding=1
+        )
+        self.batch_norm_2 = nn.BatchNorm2d(128)
+
+        self.unconv_3 = nn.ConvTranspose2d(
+            in_channels=128,
+            out_channels=64,
+            kernel_size=2,
+            stride=2,
+            padding=1
+        )
+        self.batch_norm_3 = nn.BatchNorm2d(64)
+
+        self.unconv_4 = nn.ConvTranspose2d(
+            in_channels=64,
+            out_channels=1,
+            kernel_size=1,
+            stride=1,
+            padding=2
         )
 
         if activation_function == 'sigmoid':
@@ -170,13 +173,14 @@ class DGBaNR_2_base(torch.nn.Module):
     def forward(self, x):
         x = F.relu(self.linear_1(x))
         x = F.relu(self.linear_2(x))
+        x = F.relu(self.linear_3(x))
         
-        x = x.view(x.size(0), 64, 1, 1)
+        x = x.view(x.size(0), 512, 4, 4)
 
-        x = F.relu(self.conv_1(x))
-        x = F.relu(self.conv_2(x))
-        x = F.relu(self.conv_3(x))
-        x = self.conv_4(x)
+        x = F.relu(self.batch_norm_1(self.unconv_1(x)))
+        x = F.relu(self.batch_norm_2(self.unconv_2(x)))
+        x = F.relu(self.batch_norm_3(self.unconv_3(x)))
+        x = self.unconv_4(x)
 
         x = self.activation_function(x).squeeze(dim=1)
 
