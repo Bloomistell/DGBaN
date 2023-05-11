@@ -58,10 +58,8 @@ def train_bayes_model(
     std_training=True
 ):
     print(
-f"""
-TRAINING SUMMARY:
+f"""TRAINING SUMMARY:
     Model:
-     - data_type (-t): {data_type}
      - model_name (-n): {model_name}
      - random_init (-ri): {random_init}
      - activation_function (-a): {activation_function}
@@ -73,6 +71,7 @@ TRAINING SUMMARY:
      - save_interval (-i): {save_interval}
     
     Data:
+     - data_type (-t): {data_type}
      - data_size (-d): {data_size}
      - epochs (-e): {epochs}
      - batch_size (-b): {batch_size}
@@ -137,8 +136,8 @@ TRAINING SUMMARY:
                     if pre_trained_id == 'max':
                         model_path = os.path.join(root, name)
 
-                    elif int(pre_trained_id) == _id:
-                        model_path = os.path.join(root, name)
+                if int(pre_trained_id) == _id:
+                    model_path = os.path.join(root, name)
                         
             if name.startswith(base_name):
                 _id = int(name.split('_')[-1][:-3])
@@ -285,11 +284,11 @@ TRAINING SUMMARY:
                 progress = int((i / train_steps) * 50)
                 bar = "\u2588" * progress + '-' * (50 - progress)
                 
-                print(f'Training: |{bar}| {2 * progress}% - loss {train_loss / (print_step * 2):.2g} - img {img_loss / (print_step * 2):.2g} - kl {kl_loss / (print_step * 2):.2g} - speed {batch_speed:.2f} batch/s')
+                print(f'Training: |{bar}| {2 * progress}% - loss {train_loss / print_step:.2g} - img {img_loss / print_step:.2g} - kl {kl_loss / print_step:.2g} - speed {batch_speed:.2f} batch/s')
                 
-                writer.add_scalar('training loss', train_loss / (print_step * 2), epoch * train_steps + i)
-                writer.add_scalar('img loss', img_loss / (print_step * 2), epoch * train_steps + i)
-                writer.add_scalar('kl loss', kl_loss / (print_step * 2), epoch * train_steps + i)
+                writer.add_scalar('training loss', train_loss / print_step, epoch * train_steps + i)
+                writer.add_scalar('img loss', img_loss / print_step, epoch * train_steps + i)
+                writer.add_scalar('kl loss', kl_loss / print_step, epoch * train_steps + i)
 
                 train_loss = 0.
                 img_loss = 0.
@@ -298,9 +297,7 @@ TRAINING SUMMARY:
                 start = time.time()
 
             if (i + scheduler_step) % step == 0 and i != 0:
-                print(f'\nLearning rate update:')
                 scheduler.step()
-                print('\n')
                 scheduler_adjust = True                
 
             # if i % 1000 == 0 and i != 0:
@@ -341,7 +338,6 @@ TRAINING SUMMARY:
 if __name__ == "__main__" :
 
     parser = argparse.ArgumentParser(description='Train different generative architectures on simplistic rings.', argument_default=argparse.SUPPRESS)
-    parser.add_argument('-t', '--data_type', type=str, help="Type of data")
     parser.add_argument('-n', '--model_name', type=str, help="Name of the model")
     parser.add_argument('--random_init', type=bool, action=argparse.BooleanOptionalAction, help="Initializing the gaussian's parameters at random")
     parser.add_argument('-a', '--activation_function', type=str, help="Activation function")
@@ -352,6 +348,7 @@ if __name__ == "__main__" :
     parser.add_argument('-s', '--save_path', type=str, help="Path where all the data is saved")
     parser.add_argument('-i', '--save_interval', type=int, help="Save network state every <save_interval> iterations")
 
+    parser.add_argument('-t', '--data_type', type=str, help="Type of data")
     parser.add_argument('-d', '--data_size', type=int, help="Number of events to train on")
     parser.add_argument('-e', '--epochs', type=int, help="Number of epochs to train for")
     parser.add_argument('-b', '--batch_size', type=int, help="Batch size")

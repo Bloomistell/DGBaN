@@ -792,3 +792,89 @@ class DGBaNR_2(torch.nn.Module): # R for reparametrization
                     module.mu_bias.data.zero_()
                     # Re-initialize sigma for biases
                     module.rho_bias.data.fill_(-5)
+
+
+
+class DGBaNR_3(torch.nn.Module): # R for reparametrization
+    def __init__(self, input_size, img_size, activation_function, pre_trained_base=False):
+        super(DGBaNR_2, self).__init__()
+
+        self.base_name = 'DGBaNR_2_base'
+
+        self.img_size = img_size
+
+        self.linear_layers = nn.Sequential(
+            nn.linear(input_size, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 8192),
+            nn.ReLU(),
+            nn.Linear(8192, 32768),
+            nn.ReLU()
+        )
+
+        self.conv_1 = ConvTranspose2dReparameterization(
+            in_channels=512,
+            out_channels=256,
+            kernel_size=4,
+            stride=2,
+            padding=0
+        )
+        self.batch_norm_1 = nn.BatchNorm2d(256)
+        
+        self.conv_2 = ConvTranspose2dReparameterization(
+            in_channels=256,
+            out_channels=128,
+            kernel_size=3,
+            stride=2,
+            padding=1
+        )
+        self.batch_norm_2 = nn.BatchNorm2d(128)
+        
+        self.conv_3 = ConvTranspose2dReparameterization(
+            in_channels=128,
+            out_channels=1,
+            kernel_size=2,
+            stride=2,
+            padding=3
+        )
+
+        if activation_function == 'sigmoid':
+            self.activation_function = torch.sigmoid
+        else:
+            self.activation_function = getattr(F, activation_function)
+
+    def forward(self, x):
+        kl_sum = 0
+
+        x, kl = self.linear_1(x)
+        kl_sum += kl
+        x = F.relu(x)
+        
+        x, kl = self.linear_2(x)
+        kl_sum += kl
+        x = F.relu(x)
+        
+        x, kl = self.linear_3(x)
+        kl_sum += kl
+        x = F.relu(x)
+        
+        x = x.view(x.size(0), 256, 4, 4)
+
+        x, kl = self.conv_1(x)
+        kl_sum += kl
+        x = self.batch_norm_1(x)
+        x = F.relu(x)
+
+        x, kl = self.conv_2(x)
+        kl_sum += kl
+        x = self.batch_norm_2(x)
+        x = F.relu(x)
+        
+        x, kl = self.conv_3(x)
+        kl_sum += kl
+
+        x = self.activation_function(x).squeeze(dim=1)
+
+        return x, kl_sum

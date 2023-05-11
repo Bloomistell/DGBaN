@@ -206,15 +206,13 @@ TRAINING SUMMARY:
                 start = time.time()
 
             if (i + scheduler_step) % step == 0 and i != 0:
-                print(f'\nLearning rate update:')
                 scheduler.step()
-                print('\n')
                 scheduler_adjust = True                
 
             if i % 1000 == 0 and i != 0:
                 test_loss = 0.
                 with torch.no_grad(): # evaluate model on test data
-                    for i, (X, target) in enumerate(test_loader):
+                    for X, target in test_loader:
                         pred = generator(X)
 
                         loss = loss_fn(pred, target)
