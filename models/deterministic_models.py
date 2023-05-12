@@ -1,15 +1,10 @@
+from collections import OrderedDict
+
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch.nn import (
-    Linear,
-    Sequential,
-    ReLU,
-    BatchNorm1d,
-    Sigmoid,
-    ConvTranspose2d,
-    BatchNorm2d
-)
+
+import DGBaN.models.deterministic_blocks as blocks
 
 
 
@@ -262,3 +257,91 @@ class DGBaNR_3_base(torch.nn.Module):
         x = self.activation_function(self.unconv_12(x, output_size=(32, 32))).squeeze(dim=1)
 
         return x
+
+
+
+class DGBase5Blocks(nn.Module):
+    def __init__(
+            self,
+            img_size: int,
+            arch_dict: dict
+        ):
+        super(DGBase5Blocks, self).__init__()
+
+        self.img_size = img_size
+
+        # BLOCK 1
+        self.linear_layers = arch_dict['linear_layers']
+
+        # BLOCK 2
+        self.scale_up_1 = blocks.View((4, 4))
+        self.nuconv_1 = arch_dict['unconv_1']
+
+        # BLOCK 3
+        self.scale_up_2 = blocks.ScaleUp(stride=2, padding=0, output_size=(8, 8))
+        self.nuconv_2 = arch_dict['unconv_2']
+
+        # BLOCK 4
+        self.scale_up_3 = blocks.ScaleUp(stride=2, padding=0, output_size=(16, 16))
+        self.nuconv_3 = arch_dict['unconv_3']
+
+        # BLOCK 5
+        self.scale_up_4 = blocks.LastConv(kernel_size=5, stride=2, padding=2, output_size=(32, 32))
+        self.nuconv_4 = arch_dict['unconv_4']
+
+    def forward(self, x):
+        x = self.linear_layers(x)
+
+        x = self.unconv_1(self.scale_up_1(x))
+        x = self.unconv_2(self.scale_up_2(x))
+        x = self.unconv_3(self.scale_up_3(x))
+        x = self.unconv_4(self.scale_up_4(x))
+
+        return x.squeeze(dim=1)
+
+
+
+class DGBase6Blocks(nn.Module):
+    def __init__(
+            self,
+            img_size: int,
+            arch_dict: dict
+        ):
+        super(DGBase6Blocks, self).__init__()
+
+        self.img_size = img_size
+
+        # BLOCK 1
+        self.linear_layers = arch_dict['linear_layers']
+
+        # BLOCK 2
+        self.scale_up_1 = blocks.View((4, 4))
+        self.nuconv_1 = arch_dict['unconv_1']
+
+        # BLOCK 3
+        self.scale_up_2 = blocks.ScaleUp(stride=2, padding=0, output_size=(8, 8))
+        self.nuconv_2 = arch_dict['unconv_2']
+
+        # BLOCK 4
+        self.scale_up_3 = blocks.ScaleUp(stride=2, padding=0, output_size=(16, 16))
+        self.nuconv_3 = arch_dict['unconv_3']
+
+        # BLOCK 5
+        self.scale_up_4 = blocks.LastConv(kernel_size=5, stride=2, padding=2, output_size=(32, 32))
+        self.nuconv_4 = arch_dict['unconv_4']
+        
+        # BLOCK 6
+        self.scale_up_5 = blocks.LastConv(kernel_size=5, stride=2, padding=2, output_size=(32, 32))
+        self.nuconv_5 = arch_dict['unconv_5']
+
+    def forward(self, x):
+        x = self.linear_layers(x)
+
+        x = self.unconv_1(self.scale_up_1(x))
+        x = self.unconv_2(self.scale_up_2(x))
+        x = self.unconv_3(self.scale_up_3(x))
+        x = self.unconv_4(self.scale_up_4(x))
+        x = self.unconv_5(self.scale_up_5(x))
+
+        return x.squeeze(dim=1)
+

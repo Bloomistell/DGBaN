@@ -6,22 +6,42 @@ import torch.nn.functional as F
 
 
 
+class View(nn.module):
+    def __init__(self, shape):
+        self.shape = shape
+        self.scale = shape[0] * shape[1]
+    
+    def forward(self, x):
+        return x.view(x.size(0), x.size(1) // self.scale, *self.shape)
+
+
+class ScaleUp(nn.module):
+    def __init__(self, stride, padding, output_size):
+        self.stride = stride
+        self.padding = padding
+        self.output_size = output_size
+
+    def forward(self, x):
+        C = x.size(1)
+        return nn.ConvTranspose2d(C, C, 1, self.stride, self.padding, groups=C)(x, self.output_size)
+
+
 class LinearNormAct(nn.Sequential):
     def __init__(
         self,
-        input: int,
-        output: int,
+        in_channels: int,
+        out_channels: int,
         n_layers: int,
         norm: nn.Module = None,
         act: nn.Module = nn.ReLU,
         **kwargs
     ):
-        factor = (output/input)**(1/n_layers)
+        factor = (out_channels/in_channels)**(1/n_layers)
 
         seq = []
         for i in range(n_layers):
-            seq.append(nn.Linear(input * factor**i), int(input * factor**(i+1)))
-            seq.append(norm(int(input * factor**(i+1))))
+            seq.append(nn.Linear(in_channels * factor**i), int(in_channels * factor**(i+1)))
+            seq.append(norm(int(in_channels * factor**(i+1))))
             seq.append(act())
 
         super().__init__(*seq)
@@ -30,8 +50,9 @@ class LinearNormAct(nn.Sequential):
 class ConvNormAct(nn.Sequential):
     def __init__(
         self,
-        input: int,
-        output: int,
+        in_channels: int,
+        out_channels: int,
+
         kernel_size: int,
         stride: int,
         padding: int,
@@ -42,12 +63,13 @@ class ConvNormAct(nn.Sequential):
 
         super().__init__(
             nn.Conv2d(
-                input,
-                output,
+                in_channels,
+                out_channels,
                 kernel_size=kernel_size,
-                padding=kernel_size // 2,
+                stride=stride,
+                padding=padding,
             ),
-            norm(output),
+            norm(out_channels),
             act(),
         )
 
@@ -56,7 +78,7 @@ Conv3x3BnReLU = partial(ConvNormAct, kernel_size=3, stride=1, padding=1)
 
 
 class ResidualAdd(nn.Module):
-    def __init__(self, block: nn.Module):
+    def __init__(self, block: nn.Module, shortcut: nn.Module = None):
         super().__init__()
         self.block = block
         
@@ -70,21 +92,21 @@ class ResidualAdd(nn.Module):
 
 
 class BottleNeck(nn.Sequential):
-    def __init__(self, input: int, output: int, reduction: int = 4):
-        reduced_input = output // reduction
+    def __init__(self, in_channels: int, out_channels: int, reduction: int = 4):
+        reduced_channels = out_channels // reduction
         super().__init__(
             nn.Sequential(
                 ResidualAdd(
                     nn.Sequential(
                         # wide -> narrow
-                        Conv1x1BnReLU(input, reduced_input),
+                        Conv1x1BnReLU(in_channels, reduced_channels),
                         # narrow -> narrow
-                        Conv3x3BnReLU(reduced_input, reduced_input),
+                        Conv3x3BnReLU(reduced_channels, reduced_channels),
                         # narrow -> wide
-                        Conv1x1BnReLU(reduced_input, output, act=nn.Identity),
+                        Conv1x1BnReLU(reduced_channels, out_channels, act=nn.Identity),
                     ),
-                    shortcut=Conv1x1BnReLU(input, output)
-                    if input != output
+                    shortcut=Conv1x1BnReLU(in_channels, out_channels)
+                    if in_channels != out_channels
                     else None,
                 ),
                 nn.ReLU(),
@@ -93,26 +115,67 @@ class BottleNeck(nn.Sequential):
 
 
 class LinearBottleNeck(nn.Sequential):
-    def __init__(self, input: int, output: int, reduction: int = 4):
-        reduced_input = output // reduction
+    def __init__(self, in_channels: int, out_channels: int, reduction: int = 4):
+        reduced_in_channels = out_channels // reduction
         super().__init__(
             nn.Sequential(
                 ResidualAdd(
                     nn.Sequential(
+                        ConvNormAct(in_channels, out_channels, 3, 1, 1),
+                        ConvNormAct(in_channels, out_channels, 3, 1, 1),
                         # wide -> narrow
-                        Conv1x1BnReLU(input, reduced_input),
+                        Conv1x1BnReLU(in_channels, reduced_in_channels),
                         # narrow -> narrow
-                        Conv3x3BnReLU(reduced_input, reduced_input),
+                        Conv3x3BnReLU(reduced_in_channels, reduced_in_channels),
                         # narrow -> wide
-                        Conv1x1BnReLU(reduced_input, output, act=nn.Identity),
+                        Conv1x1BnReLU(reduced_in_channels, out_channels, act=nn.Identity),
                     ),
-                    shortcut=Conv1x1BnReLU(input, output)
-                    if input != output
+                    shortcut=Conv1x1BnReLU(in_channels, out_channels)
+                    if in_channels != out_channels
                     else None,
                 ),
             )
         )
         
+
+class Conv3x11x3NormAct(nn.Sequential):
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__(
+            nn.Sequential(
+                ResidualAdd(
+                    nn.Sequential(
+                        ConvNormAct(in_channels, out_channels, 3, 1, 1),
+                        ConvNormAct(in_channels, out_channels, (3, 1), 1, (1, 0)),
+                        ConvNormAct(in_channels, out_channels, (1, 3), 1, (0, 1)),
+                        ConvNormAct(in_channels, out_channels, 3, 1, 1, act=nn.Identity)
+                    ),
+                    shortcut=Conv1x1BnReLU(in_channels, out_channels)
+                    if in_channels != out_channels
+                    else None,
+                ),
+                nn.ReLU(),
+            )
+        )
+
+        
+class Conv3x3x3NormAct(nn.Sequential):
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__(
+            nn.Sequential(
+                ResidualAdd(
+                    nn.Sequential(
+                        ConvNormAct(in_channels, out_channels, 3, 1, 1),
+                        ConvNormAct(in_channels, out_channels, 3, 1, 1),
+                        ConvNormAct(in_channels, out_channels, 3, 1, 1, act=nn.Identity)
+                    ),
+                    shortcut=Conv1x1BnReLU(in_channels, out_channels)
+                    if in_channels != out_channels
+                    else None,
+                ),
+                nn.ReLU(),
+            )
+        )
+
 
 class LastConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding, output_size):

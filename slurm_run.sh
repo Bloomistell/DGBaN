@@ -4,10 +4,10 @@
 #SBATCH --time=20:00:00
 #SBATCH --mem=32GB
 #SBATCH --cpus-per-task=4
-#SBATCH -o /home/J000000000007/DGBaN_project/run0_log.stdout
+#SBATCH -o /home/J000000000007/DGBaN_project/run3_log.stdout
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=3
 
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate DGBaN
@@ -43,15 +43,37 @@ cd /home/J000000000007/DGBaN_project/DGBaN/
 #  --no-std_training \
 
 # deterministic:
-python3 -u training/train_deterministic_model.py \
- -t single_random_ring \
- -n DGBaNR_3_base \
- -a sigmoid \
- --no-pre_trained \
- -id max \
+# python3 -u training/train_deterministic_model.py \
+#  -t single_random_ring \
+#  -n DGBaNR_3_base \
+#  -a sigmoid \
+#  --no-pre_trained \
+#  -id max \
+#  -s ../save_data \
+#  -i 1 \
+# \
+#  -d 640000 \
+#  -e 200 \
+#  -b 64 \
+#  -f 0.8 \
+#  --no-noise \
+#  -r 42 \
+# \
+#  -o Adam \
+#  -l mse_loss \
+#  -lr 1e-2 \
+#  -lrs 0.95 \
+#  -stp 1000 \
+ 
+# grid search:
+python3 -u training/deterministic_model_grid_search.py \
+ -id 0 \
+ -tpm 1 \
+\
  -s ../save_data \
  -i 1 \
 \
+ -t single_random_ring \
  -d 640000 \
  -e 200 \
  -b 64 \
