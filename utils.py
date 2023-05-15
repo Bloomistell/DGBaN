@@ -13,4 +13,4 @@ def count_params(model):
     for weights_and_biases in params.values():
         S += np.prod(weights_and_biases.size())
 
-    return S
+    return int(S)

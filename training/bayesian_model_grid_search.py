@@ -11,34 +11,80 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 from datasets import generate_simple_dataset
-from models import DGBase5Blocks
+from models import DGBaN5Blocks
 from training import losses
-from models.deterministic_blocks import *
+from models.bayesian_blocks import *
 from utils import *
 
 
-dict_blocks = {0:Conv3x3x3NormAct, 1:BottleNeck, 2:LinearBottleNeck, 3:Conv3x11x3NormAct}
-
-block_choice = []
-while len(block_choice) < 64:
-    seq = list(np.random.choice([0, 1, 2, 3], size=3))
-    if seq not in block_choice:
-        block_choice.append(seq) 
-
-models = {}
-for i in range(64):
-    models[f'model_{i+1}'] = {
+models = {
+    f'model_1':{
         'linear_layers':LinearNormAct(6, 8192, 5),
         'scale_up_1_channels':512,
-        'unconv_1':dict_blocks[block_choice[i][0]](512, 256),
+        'unconv_1':Conv3x3x3NormAct(512, 256),
         'scale_up_2_channels':256,
-        'unconv_2':dict_blocks[block_choice[i][1]](256, 128),
+        'unconv_2':LinearBottleNeck(256, 128),
         'scale_up_3_channels':128,
-        'unconv_3':dict_blocks[block_choice[i][2]](128, 64),
+        'unconv_3':Conv3x11x3NormAct(128, 64),
         'scale_up_4_channels':64,
-        'unconv_4':torch.nn.Identity()
+        'unconv_4':BayesIdentity()
+    },
+    f'model_2':{
+        'linear_layers':LinearNormAct(6, 8192, 5),
+        'scale_up_1_channels':512,
+        'unconv_1':LinearBottleNeck(512, 256),
+        'scale_up_2_channels':256,
+        'unconv_2':Conv3x3x3NormAct(256, 128),
+        'scale_up_3_channels':128,
+        'unconv_3':Conv3x11x3NormAct(128, 64),
+        'scale_up_4_channels':64,
+        'unconv_4':BayesIdentity()
+    },
+    f'model_3':{
+        'linear_layers':LinearNormAct(6, 8192, 5),
+        'scale_up_1_channels':512,
+        'unconv_1':Conv3x11x3NormAct(512, 256),
+        'scale_up_2_channels':256,
+        'unconv_2':LinearBottleNeck(256, 128),
+        'scale_up_3_channels':128,
+        'unconv_3':Conv3x3x3NormAct(128, 64),
+        'scale_up_4_channels':64,
+        'unconv_4':BayesIdentity()
+    },
+    f'model_4':{
+        'linear_layers':LinearNormAct(6, 8192, 5),
+        'scale_up_1_channels':512,
+        'unconv_1':Conv3x11x3NormAct(512, 256),
+        'scale_up_2_channels':256,
+        'unconv_2':Conv3x3x3NormAct(256, 128),
+        'scale_up_3_channels':128,
+        'unconv_3':LinearBottleNeck(128, 64),
+        'scale_up_4_channels':64,
+        'unconv_4':BayesIdentity()
+    },
+    f'model_5':{
+        'linear_layers':LinearNormAct(6, 8192, 5),
+        'scale_up_1_channels':512,
+        'unconv_1':Conv3x3x3NormAct(512, 256),
+        'scale_up_2_channels':256,
+        'unconv_2':Conv3x11x3NormAct(256, 128),
+        'scale_up_3_channels':128,
+        'unconv_3':LinearBottleNeck(128, 64),
+        'scale_up_4_channels':64,
+        'unconv_4':BayesIdentity()
+    },
+    f'model_6':{
+        'linear_layers':LinearNormAct(6, 8192, 5),
+        'scale_up_1_channels':512,
+        'unconv_1':LinearBottleNeck(512, 256),
+        'scale_up_2_channels':256,
+        'unconv_2':Conv3x11x3NormAct(256, 128),
+        'scale_up_3_channels':128,
+        'unconv_3':Conv3x3x3NormAct(128, 64),
+        'scale_up_4_channels':64,
+        'unconv_4':BayesIdentity()
     }
-
+}
 
 
 def train_model(
@@ -56,27 +102,31 @@ def train_model(
     epochs=200,
     batch_size=64,
     train_fraction=0.8,
-    noise=False,
+    noise=True,
+    sigma=0.3,
     random_seed=42,
 
     # Training
     optim_name='Adam',
     loss_name='nll_loss',
+    num_mc=10,
     lr=1e-2,
-    lr_step=0.95,
-    step=1000
+    lr_step=0.1,
+    step=9999,
+    mean_training=True,
+    std_training=True
 ):
     print(
 f"""
 TRAINING SUMMARY:
-    Grid search:
-     - grid_search_id (-id): {grid_search_id}
-     - time_per_model (-tpm): {time_per_model}
-
     Model:
      - save_path (-s): {save_path}
      - save_interval (-i): {save_interval}
     
+    Grid search:
+     - grid_search_id (-id): {grid_search_id}
+     - time_per_model (-tpm): {time_per_model}
+
     Data:
      - data_type (-t): {data_type}
      - data_size (-d): {data_size}
@@ -84,14 +134,18 @@ TRAINING SUMMARY:
      - batch_size (-b): {batch_size}
      - train_fraction (-f): {train_fraction}
      - noise (--noise): {noise}
+     - sigma (-sig): {sigma}
      - random_seed (-r): {random_seed}
 
     Training:
      - optim_name (-o): {optim_name}
      - loss_name (-l): {loss_name}
+     - num_mc (-mc): {num_mc}
      - lr (-lr): {lr}
      - lr_step (-lrs): {lr_step}
      - step (-stp): {step}
+     - mean_training (--mean_training): {mean_training}
+     - std_training (--std_training): {std_training}
 """
     )
     time_per_model = time_per_model * 3600 # conversion in seconds
@@ -125,7 +179,7 @@ TRAINING SUMMARY:
             print(f"{block_name}: {block.__name__ if isinstance(block, type) else block}")
         
         print("\n    Creating model...")
-        generator = DGBase5Blocks(N, model_dict)
+        generator = DGBaN5Blocks(N, model_dict)
         print("    SUCCESS\n")
 
         print(f"    Number of trainable parameters: {count_params(generator):,}\n")
@@ -140,9 +194,9 @@ TRAINING SUMMARY:
             if i < 10:
                 optimizer.zero_grad()
 
-                pred = generator(X)
+                pred, kl = generator(X)
 
-                loss = loss_fn(pred, target)
+                loss = loss_fn(pred, target) + (kl / batch_size)
 
                 loss.backward()
                 optimizer.step()
@@ -159,17 +213,17 @@ TRAINING SUMMARY:
 
         ### load model ###
         print(f"Training {model_name}:")
-        generator = DGBase5Blocks(N, model_dict)
+        generator = DGBaN5Blocks(N, model_dict)
  
-        print(f'\nModel path: {save_path}/{data_type}/{optim_name}_{loss_name}/grid_search_{grid_search_id}/{model_name}.pt\n')
+        print(f'\nModel path: {save_path}/{data_type}/{optim_name}_{loss_name}/{model_name}/{model_name}_0.pt\n')
 
         writer = SummaryWriter(
-            f'{save_path}/{data_type}/{optim_name}_{loss_name}/grid_search_{grid_search_id}/tensorboard_{model_name}/'
+            f'{save_path}/{data_type}/{optim_name}_{loss_name}/{model_name}/tensorboard_grid_search_{grid_search_id}/'
         )
 
         torch.save(
             generator.state_dict(),
-            f'{save_path}/{data_type}/{optim_name}_{loss_name}/grid_search_{grid_search_id}/{model_name}.pt'
+            f'{save_path}/{data_type}/{optim_name}_{loss_name}/{model_name}/{model_name}_0.pt'
         )
 
 
@@ -189,22 +243,51 @@ TRAINING SUMMARY:
         while time.time() - start_training < time_per_model:
             print(f'\nEPOCH {epoch + 1}:')
             train_loss = 0.
+            img_loss = 0.
+            kl_loss = 0.
 
             scheduler_step = 0
             scheduler_adjust = False
 
             start = time.time()
             for i, (X, target) in enumerate(train_loader):
-                optimizer.zero_grad()
+                if mean_training:
+                    optimizer.zero_grad()
 
-                pred = generator(X)
+                    preds = []
+                    kls = []
+                    for _ in range(num_mc): # extract several samples from the model
+                        pred, kl = generator(X)
+                        preds.append(pred)
+                        kls.append(kl)
 
-                loss = loss_fn(pred, target)
+                    pred = torch.mean(torch.stack(preds), dim=0)
+                    kl = torch.mean(torch.stack(kls), dim=0)
 
-                train_loss += loss.item()
+                    img = loss_fn(pred, target)
+                    loss = img + (kl / batch_size)
 
-                loss.backward()
-                optimizer.step()
+                    train_loss += loss.item()
+                    img_loss += img.item()
+                    kl_loss += (kl / batch_size).item()
+
+                    loss.backward()
+                    optimizer.step()
+
+                if std_training:
+                    optimizer.zero_grad()
+
+                    pred, kl = generator(X)
+
+                    img = loss_fn(pred, target)
+                    loss = img + (kl / batch_size)
+
+                    train_loss += loss.item()
+                    img_loss += img.item()
+                    kl_loss += (kl / batch_size).item()
+
+                    loss.backward()
+                    optimizer.step()
 
                 if i % print_step == 0 and i != 0:
                     end = time.time()
@@ -213,29 +296,19 @@ TRAINING SUMMARY:
                     progress = int((i / train_steps) * 50)
                     bar = "\u2588" * progress + '-' * (50 - progress)
                     train_loss_scaled = train_loss / print_step
+                    img_loss_scaled = img_loss / print_step
+                    kl_loss_scaled = kl_loss / print_step
                     
-                    print(f'Training: |{bar}| {2 * progress}% - loss {train_loss_scaled:.2g} - speed {batch_speed:.2f} batch/s')
+                    print(f'Training: |{bar}| {2 * progress}% - loss {train_loss_scaled:.2g} - img {img_loss_scaled:.2g} - kl {kl_loss_scaled:.2g} - speed {batch_speed:.2f} batch/s')
                     
                     writer.add_scalar('training loss', train_loss / print_step, epoch * train_steps + i)
+                    writer.add_scalar('img loss', img_loss / print_step, epoch * train_steps + i)
+                    writer.add_scalar('kl loss', kl_loss / print_step, epoch * train_steps + i)
 
                     train_loss = 0.
 
                     start = time.time()
 
-                if i % 1000 == 0 and i != 0:
-                    test_loss = 0.
-                    with torch.no_grad(): # evaluate model on test data
-                        for X, target in test_loader:
-                            pred = generator(X)
-
-                            loss = loss_fn(pred, target)
-                            test_loss += loss.item()
-
-                        writer.add_scalar('testing loss', test_loss / test_steps, epoch * train_steps + i)
-
-                        len_adjust = len(f" |{bar}| {2 * progress}% - ") - 2
-                        print(f'Validation:{" " * len_adjust}loss {test_loss / test_steps:.2g}')
-    
                 if (i + scheduler_step) % step == 0 and i != 0:
                     scheduler.step()
                     scheduler_adjust = True                
@@ -257,7 +330,8 @@ TRAINING SUMMARY:
         print(f"""\n{model_name} TRAINING SUMMARY:
  - speed {batch_speed:.2f} batch/s
  - final train loss: {train_loss_scaled:.2g}
- - final test loss: {test_loss / test_steps:.2g}
+ - final img loss: {img_loss_scaled:.2g}
+ - final kl loss: {kl_loss_scaled:.2g}
  - total time: {int(total_hours)}h {total_minutes:.0f}min
  - total epoch: {epoch}
  - epoch per hour: {epoch / total_hours:.0f} epoch/h
@@ -280,13 +354,17 @@ if __name__ == "__main__" :
     parser.add_argument('-b', '--batch_size', type=int, help="Batch size")
     parser.add_argument('-f', '--train_fraction', type=float, help="Fraction of data used for training")
     parser.add_argument('--noise', type=bool, action=argparse.BooleanOptionalAction, help="Do we use a noised dataset")
+    parser.add_argument('-sig', '--sigma', type=float, help="Sigma for the gaussian noise")
     parser.add_argument('-r', '--random_seed', type=int, help="Random seed")
 
     parser.add_argument('-o', '--optim_name', type=str, help="Name of the optimizer")
     parser.add_argument('-l', '--loss_name', type=str, help="Name of the loss function")
+    parser.add_argument('-mc', '--num_mc', type=int, help="Number of Monte Carlo runs during training")
     parser.add_argument('-lr', '--lr', type=float, help="Learning rate")
     parser.add_argument('-lrs', '--lr_step', type=float, help="Learning rate step")
     parser.add_argument('-stp', '--step', type=int, help="Step interval")
+    parser.add_argument('--mean_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with the average of several mc")
+    parser.add_argument('--std_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with one mc")
 
     args = parser.parse_args()
 

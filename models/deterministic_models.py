@@ -4,7 +4,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-import DGBaN.models.deterministic_blocks as blocks
+import models.deterministic_blocks as blocks
 
 
 
@@ -14,24 +14,24 @@ class LinearGenerator(torch.nn.Module):
 
         self.img_size = img_size
 
-        self.network = Sequential(
-            Linear(input_size, 12),
-            ReLU(),
+        self.network = nn.Sequential(
+            nn.Linear(input_size, 12),
+            nn.ReLU(),
 
-            Linear(12, 36),
-            BatchNorm1d(36),
-            ReLU(),
+            nn.Linear(12, 36),
+            nn.BatchNorm1d(36),
+            nn.ReLU(),
 
-            Linear(36, 108),
-            BatchNorm1d(108),
-            ReLU(),
+            nn.Linear(36, 108),
+            nn.BatchNorm1d(108),
+            nn.ReLU(),
 
-            Linear(108, 324),
-            BatchNorm1d(324),
-            ReLU(),
+            nn.Linear(108, 324),
+            nn.BatchNorm1d(324),
+            nn.ReLU(),
 
-            Linear(324, img_size * img_size),
-            Sigmoid()
+            nn.Linear(324, img_size * img_size),
+            nn.Sigmoid()
         )
 
     def forward(self, x):
@@ -46,22 +46,22 @@ class ConvGenerator(torch.nn.Module):
 
         self.img_size = img_size
 
-        self.neural_net = Sequential(
-            Linear(input_size, 512 * 4 * 4),
-            ReLU(),
+        self.neural_net = nn.Sequential(
+            nn.Linear(input_size, 512 * 4 * 4),
+            nn.ReLU(),
         )
 
-        self.conv_net = Sequential(
-            ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1),
-            BatchNorm2d(256),
-            ReLU(),
+        self.conv_net = nn.Sequential(
+            nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
             
-            ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
-            BatchNorm2d(128),
-            ReLU(),
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
 
-            ConvTranspose2d(128, 1, kernel_size=4, stride=2, padding=1),
-            Sigmoid()
+            nn.ConvTranspose2d(128, 1, kernel_size=4, stride=2, padding=1),
+            nn.Sigmoid()
         )
 
     def forward(self, x):
@@ -260,13 +260,15 @@ class DGBaNR_3_base(torch.nn.Module):
 
 
 
-class DGBase5Blocks(nn.Module):
+class DGBase5Blocks(torch.nn.Module):
     def __init__(
             self,
             img_size: int,
             arch_dict: dict
         ):
         super(DGBase5Blocks, self).__init__()
+
+        self.arch = arch_dict
 
         self.img_size = img_size
 
@@ -275,33 +277,40 @@ class DGBase5Blocks(nn.Module):
 
         # BLOCK 2
         self.scale_up_1 = blocks.View((4, 4))
-        self.nuconv_1 = arch_dict['unconv_1']
+        self.unconv_1 = arch_dict['unconv_1']
 
         # BLOCK 3
-        self.scale_up_2 = blocks.ScaleUp(stride=2, padding=0, output_size=(8, 8))
-        self.nuconv_2 = arch_dict['unconv_2']
+        self.scale_up_2 = blocks.ScaleUp(arch_dict['scale_up_2_channels'], stride=2, padding=0, output_size=(8, 8))
+        self.unconv_2 = arch_dict['unconv_2']
 
         # BLOCK 4
-        self.scale_up_3 = blocks.ScaleUp(stride=2, padding=0, output_size=(16, 16))
-        self.nuconv_3 = arch_dict['unconv_3']
+        self.scale_up_3 = blocks.ScaleUp(arch_dict['scale_up_3_channels'], stride=2, padding=0, output_size=(16, 16))
+        self.unconv_3 = arch_dict['unconv_3']
 
         # BLOCK 5
-        self.scale_up_4 = blocks.LastConv(kernel_size=5, stride=2, padding=2, output_size=(32, 32))
-        self.nuconv_4 = arch_dict['unconv_4']
+        self.scale_up_4 = blocks.LastConv(arch_dict['scale_up_4_channels'], kernel=5, stride=2, padding=2, output_size=(32, 32))
+        self.unconv_4 = arch_dict['unconv_4']
 
     def forward(self, x):
         x = self.linear_layers(x)
 
-        x = self.unconv_1(self.scale_up_1(x))
-        x = self.unconv_2(self.scale_up_2(x))
-        x = self.unconv_3(self.scale_up_3(x))
-        x = self.unconv_4(self.scale_up_4(x))
+        x = self.scale_up_1(x)
+        x = self.unconv_1(x)
+
+        x = self.scale_up_2(x)
+        x = self.unconv_2(x)
+
+        x = self.scale_up_3(x)
+        x = self.unconv_3(x)
+
+        x = self.scale_up_4(x)
+        x = self.unconv_4(x)
 
         return x.squeeze(dim=1)
 
 
 
-class DGBase6Blocks(nn.Module):
+class DGBase6Blocks(torch.nn.Module):
     def __init__(
             self,
             img_size: int,

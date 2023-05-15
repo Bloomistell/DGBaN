@@ -5,6 +5,8 @@ import torch.nn.functional as F
 from bayesian_torch.layers.variational_layers.linear_variational import LinearReparameterization
 from bayesian_torch.layers.variational_layers.conv_variational import ConvTranspose2dReparameterization
 
+import models.bayesian_blocks as blocks
+
 
 
 prior_mu = 0.0
@@ -878,3 +880,63 @@ class DGBaNR_3(torch.nn.Module): # R for reparametrization
         x = self.activation_function(x).squeeze(dim=1)
 
         return x, kl_sum
+
+
+
+class DGBaN5Blocks(torch.nn.Module):
+    def __init__(
+            self,
+            img_size: int,
+            arch_dict: dict
+        ):
+        super(DGBaN5Blocks, self).__init__()
+
+        self.arch = arch_dict
+
+        self.img_size = img_size
+
+        # BLOCK 1
+        self.linear_layers = arch_dict['linear_layers']
+
+        # BLOCK 2
+        self.scale_up_1 = blocks.View((4, 4))
+        self.unconv_1 = arch_dict['unconv_1']
+
+        # BLOCK 3
+        self.scale_up_2 = blocks.ScaleUp(arch_dict['scale_up_2_channels'], stride=2, padding=0, output_padding=1)
+        self.unconv_2 = arch_dict['unconv_2']
+
+        # BLOCK 4
+        self.scale_up_3 = blocks.ScaleUp(arch_dict['scale_up_3_channels'], stride=2, padding=0, output_padding=1)
+        self.unconv_3 = arch_dict['unconv_3']
+
+        # BLOCK 5
+        self.scale_up_4 = blocks.LastConv(arch_dict['scale_up_4_channels'], kernel=5, stride=2, padding=2, output_padding=1)
+        self.unconv_4 = arch_dict['unconv_4']
+
+    def forward(self, x):
+        kl_sum = 0
+        x, kl = self.linear_layers(x)
+        kl_sum += kl
+
+        x, kl = self.scale_up_1(x)
+        kl_sum += kl
+        x, kl = self.unconv_1(x)
+        kl_sum += kl
+
+        x, kl = self.scale_up_2(x)
+        kl_sum += kl
+        x, kl = self.unconv_2(x)
+        kl_sum += kl
+
+        x, kl = self.scale_up_3(x)
+        kl_sum += kl
+        x, kl = self.unconv_3(x)
+        kl_sum += kl
+
+        x, kl = self.scale_up_4(x)
+        kl_sum += kl
+        x, kl = self.unconv_4(x)
+        kl_sum += kl
+
+        return x.squeeze(dim=1), kl_sum

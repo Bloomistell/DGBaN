@@ -10,10 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard import SummaryWriter
-
-from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
 
 import numpy as np
 
@@ -27,7 +24,6 @@ import DGBaN.training.losses as losses
 
 def train_bayes_model(
     # Model:
-    data_type='energy_random',
     model_name='DGBaNR',
     random_init=False,
     activation_function='sigmoid',
@@ -39,6 +35,7 @@ def train_bayes_model(
     save_interval=1,
 
     # Data:
+    data_type='energy_random',
     data_size=64000,
     epochs=200,
     batch_size=64,

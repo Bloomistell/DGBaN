@@ -6,8 +6,9 @@ import torch.nn.functional as F
 
 
 
-class View(nn.module):
+class View(nn.Module):
     def __init__(self, shape):
+        super(View, self).__init__()
         self.shape = shape
         self.scale = shape[0] * shape[1]
     
@@ -15,15 +16,14 @@ class View(nn.module):
         return x.view(x.size(0), x.size(1) // self.scale, *self.shape)
 
 
-class ScaleUp(nn.module):
-    def __init__(self, stride, padding, output_size):
-        self.stride = stride
-        self.padding = padding
+class ScaleUp(nn.Module):
+    def __init__(self, channels, stride, padding, output_size):
+        super(ScaleUp, self).__init__()
+        self.conv_t = nn.ConvTranspose2d(channels, channels, 1, stride, padding, groups=channels, bias=False)
         self.output_size = output_size
 
     def forward(self, x):
-        C = x.size(1)
-        return nn.ConvTranspose2d(C, C, 1, self.stride, self.padding, groups=C)(x, self.output_size)
+        return self.conv_t(x, self.output_size)
 
 
 class LinearNormAct(nn.Sequential):
@@ -40,8 +40,9 @@ class LinearNormAct(nn.Sequential):
 
         seq = []
         for i in range(n_layers):
-            seq.append(nn.Linear(in_channels * factor**i), int(in_channels * factor**(i+1)))
-            seq.append(norm(int(in_channels * factor**(i+1))))
+            seq.append(nn.Linear(int(in_channels * factor**i), int(in_channels * factor**(i+1))))
+            if norm:
+                seq.append(norm(int(in_channels * factor**(i+1))))
             seq.append(act())
 
         super().__init__(*seq)
@@ -62,7 +63,7 @@ class ConvNormAct(nn.Sequential):
     ):
 
         super().__init__(
-            nn.Conv2d(
+            nn.ConvTranspose2d(
                 in_channels,
                 out_channels,
                 kernel_size=kernel_size,
@@ -81,6 +82,7 @@ class ResidualAdd(nn.Module):
     def __init__(self, block: nn.Module, shortcut: nn.Module = None):
         super().__init__()
         self.block = block
+        self.shortcut = shortcut
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         res = x
@@ -98,8 +100,9 @@ class BottleNeck(nn.Sequential):
             nn.Sequential(
                 ResidualAdd(
                     nn.Sequential(
+                        ConvNormAct(in_channels, out_channels, 3, 1, 1),
                         # wide -> narrow
-                        Conv1x1BnReLU(in_channels, reduced_channels),
+                        Conv1x1BnReLU(out_channels, reduced_channels),
                         # narrow -> narrow
                         Conv3x3BnReLU(reduced_channels, reduced_channels),
                         # narrow -> wide
@@ -122,9 +125,8 @@ class LinearBottleNeck(nn.Sequential):
                 ResidualAdd(
                     nn.Sequential(
                         ConvNormAct(in_channels, out_channels, 3, 1, 1),
-                        ConvNormAct(in_channels, out_channels, 3, 1, 1),
                         # wide -> narrow
-                        Conv1x1BnReLU(in_channels, reduced_in_channels),
+                        Conv1x1BnReLU(out_channels, reduced_in_channels),
                         # narrow -> narrow
                         Conv3x3BnReLU(reduced_in_channels, reduced_in_channels),
                         # narrow -> wide
@@ -145,9 +147,9 @@ class Conv3x11x3NormAct(nn.Sequential):
                 ResidualAdd(
                     nn.Sequential(
                         ConvNormAct(in_channels, out_channels, 3, 1, 1),
-                        ConvNormAct(in_channels, out_channels, (3, 1), 1, (1, 0)),
-                        ConvNormAct(in_channels, out_channels, (1, 3), 1, (0, 1)),
-                        ConvNormAct(in_channels, out_channels, 3, 1, 1, act=nn.Identity)
+                        ConvNormAct(out_channels, out_channels, (3, 1), 1, (1, 0)),
+                        ConvNormAct(out_channels, out_channels, (1, 3), 1, (0, 1)),
+                        ConvNormAct(out_channels, out_channels, 3, 1, 1, act=nn.Identity)
                     ),
                     shortcut=Conv1x1BnReLU(in_channels, out_channels)
                     if in_channels != out_channels
@@ -165,8 +167,8 @@ class Conv3x3x3NormAct(nn.Sequential):
                 ResidualAdd(
                     nn.Sequential(
                         ConvNormAct(in_channels, out_channels, 3, 1, 1),
-                        ConvNormAct(in_channels, out_channels, 3, 1, 1),
-                        ConvNormAct(in_channels, out_channels, 3, 1, 1, act=nn.Identity)
+                        ConvNormAct(out_channels, out_channels, 3, 1, 1),
+                        ConvNormAct(out_channels, out_channels, 3, 1, 1, act=nn.Identity)
                     ),
                     shortcut=Conv1x1BnReLU(in_channels, out_channels)
                     if in_channels != out_channels
@@ -178,10 +180,10 @@ class Conv3x3x3NormAct(nn.Sequential):
 
 
 class LastConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, output_size):
+    def __init__(self, in_channels, kernel, stride, padding, output_size):
         super(LastConv, self).__init__()
+        self.conv_t = nn.ConvTranspose2d(in_channels, 1, kernel, stride, padding)
         self.output_size = output_size
-        self.convT = nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride, padding)
     
     def forward(self, x):
-        return self.convT(x, self.output_size)
+        return self.conv_t(x, self.output_size)
