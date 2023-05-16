@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from bayesian_torch.layers.variational_layers.linear_variational import LinearReparameterization
-from bayesian_torch.layers.variational_layers.conv_variational import ConvTranspose2dReparameterization
+from bayesian_torch.layers.variational_layers.linear_variational import LinearReparameterization as BayesLinear
+from bayesian_torch.layers.variational_layers.conv_variational import ConvTranspose2dReparameterization as BayesConvTranspose2d
 
 import models.bayesian_blocks as blocks
 
@@ -16,7 +16,7 @@ posterior_rho_init = -3.0
 
 
 def BayesLinearR(n_input, n_output):
-    return LinearReparameterization(
+    return BayesLinear(
         n_input,
         n_output,
         prior_mean=prior_mu,
@@ -26,7 +26,7 @@ def BayesLinearR(n_input, n_output):
     )
 
 def BayesConvT2dR(in_planes, out_planes, stride=2):
-    return ConvTranspose2dReparameterization(
+    return BayesConvTranspose2d(
         in_channels=in_planes,
         out_channels=out_planes,
         kernel_size=4,
@@ -936,6 +936,306 @@ class DGBaN5Blocks(torch.nn.Module):
 
         x, kl = self.scale_up_4(x)
         kl_sum += kl
+        x, kl = self.unconv_4(x)
+        kl_sum += kl
+
+        return x.squeeze(dim=1), kl_sum
+
+
+
+class DGBaN4BlocksOpitm(torch.nn.Module):
+    def __init__(self, input_size, img_size, activation_function, pre_trained_base=False):
+        super(DGBaN4BlocksOpitm, self).__init__()
+        
+        self.base_name = 'DGBaN4Blocks'
+
+        # BLOCK 1
+        self.linear_1 = nn.Linear(84, 209)
+        self.linear_2 = nn.Linear(209, 524)
+        self.linear_3 = nn.Linear(524, 1311)
+        self.linear_4 = nn.Linear(1311, 3277)
+        self.linear_5 = nn.Linear(3277, 8192)
+
+        # BLOCK 2
+        self.unconv_11 = BayesConvTranspose2d(512, 512, 3, 1, 1)
+        self.bn_11 = nn.BatchNorm2d(512)
+        self.unconv_12 = BayesConvTranspose2d(512, 64, 1, 1, 0)
+        self.bn_12 = nn.BatchNorm2d(64)
+        self.unconv_13 = BayesConvTranspose2d(64, 64, 3, 1, 1)
+        self.bn_13 = nn.BatchNorm2d(64)
+        self.unconv_14 = BayesConvTranspose2d(64, 256, 1, 1, 0)
+        self.bn_14 = nn.BatchNorm2d(256)
+
+        self.shortcut_1 = BayesConvTranspose2d(512, 256, 1, 1, 0, bias=False)
+        self.bn_shortcut_1 = nn.BatchNorm2d(256)
+
+        self.upscale_1 = BayesConvTranspose2d(256, 256, 1, 2, 0, output_padding=1, groups=256, bias=False)
+        self.bn_upscale_1 = nn.BatchNorm2d(256)
+
+        # BLOCK 3
+        self.unconv_21 = BayesConvTranspose2d(256, 256, 3, 1, 1)
+        self.bn_21 = nn.BatchNorm2d(256)
+        self.unconv_22 = BayesConvTranspose2d(256, 128, 3, 1, 1)
+        self.bn_22 = nn.BatchNorm2d(128)
+        self.unconv_24 = BayesConvTranspose2d(128, 128, 3, 1, 1)
+        self.bn_24 = nn.BatchNorm2d(128)
+
+        self.shortcut_2 = BayesConvTranspose2d(256, 128, 1, 1, 0, bias=False)
+        self.bn_shortcut_2 = nn.BatchNorm2d(128)
+
+        self.upscale_2 = BayesConvTranspose2d(128, 128, 1, 2, 0, output_padding=1, groups=128, bias=False)
+        self.bn_upscale_2 = nn.BatchNorm2d(128)
+
+        # BLOCK 4
+        self.unconv_31 = BayesConvTranspose2d(128, 128, 3, 1, 1)
+        self.bn_31 = nn.BatchNorm2d(128)
+        self.unconv_32 = BayesConvTranspose2d(128, 64, 3, 1, 1)
+        self.bn_32 = nn.BatchNorm2d(64)
+        self.unconv_34 = BayesConvTranspose2d(64, 64, 3, 1, 1)
+        self.bn_34 = nn.BatchNorm2d(64)
+
+        self.shortcut_3 = BayesConvTranspose2d(128, 64, 1, 1, 0, bias=False)
+        self.bn_shortcut_3 = nn.BatchNorm2d(64)
+
+        self.unconv_4 = BayesConvTranspose2d(64, 1, 5, 2, 2, output_padding=1)
+
+    def forward(self, x):
+        kl_sum = 0
+
+        # BLOCK 1
+        # x, kl = self.linear_1(x)
+        # x = F.relu(x)
+        # kl_sum += kl
+        # x, kl = self.linear_2(x)
+        # x = F.relu(x)
+        # kl_sum += kl
+        # x, kl = self.linear_3(x)
+        # x = F.relu(x)
+        # kl_sum += kl
+        # x, kl = self.linear_4(x)
+        # x = F.relu(x)
+        # kl_sum += kl
+        # x, kl = self.linear_5(x)
+        # x = F.relu(x)
+        # kl_sum += kl
+        
+        x = F.relu(self.linear_1(x))
+        x = F.relu(self.linear_2(x))
+        x = F.relu(self.linear_3(x))
+        x = F.relu(self.linear_4(x))
+        x = F.relu(self.linear_5(x))
+
+        z = x.view(x.size(0), 512, 4, 4)
+
+        # BLOCK 2
+        x, kl = self.unconv_11(z)
+        x = F.relu(self.bn_11(x))
+        kl_sum += kl
+        x, kl = self.unconv_12(x)
+        x = F.relu(self.bn_12(x))
+        kl_sum += kl
+        x, kl = self.unconv_13(x)
+        x = F.relu(self.bn_13(x))
+        kl_sum += kl
+        x, kl = self.unconv_14(x)
+        x = self.bn_14(x)
+        kl_sum += kl
+
+        z, kl = self.shortcut_1(z)
+        z = self.bn_shortcut_1(z)
+        kl_sum += kl
+
+        x = F.relu(x + z)
+
+        x, kl = self.upscale_1(x)
+        z = self.bn_upscale_1(x)
+        kl_sum += kl
+
+        # BLOCK 3
+        x, kl = self.unconv_21(x)
+        x = F.relu(self.bn_21(x))
+        kl_sum += kl
+        x, kl = self.unconv_22(x)
+        x = F.relu(self.bn_22(x))
+        kl_sum += kl
+        x, kl = self.unconv_24(x)
+        x = self.bn_24(x)
+        kl_sum += kl
+
+        z, kl = self.shortcut_2(z)
+        z = self.bn_shortcut_2(z)
+        kl_sum += kl
+
+        x = F.relu(x + z)
+
+        x, kl = self.upscale_2(x)
+        z = self.bn_upscale_2(x)
+        kl_sum += kl
+
+        # BLOCK 4
+        x, kl = self.unconv_31(x)
+        x = F.relu(self.bn_31(x))
+        kl_sum += kl
+        x, kl = self.unconv_32(x)
+        x = F.relu(self.bn_32(x))
+        kl_sum += kl
+        x, kl = self.unconv_34(x)
+        x = self.bn_34(x)
+        kl_sum += kl
+
+        z, kl = self.shortcut_3(z)
+        z = self.bn_shortcut_3(z)
+        kl_sum += kl
+
+        x = F.relu(x + z)
+
+        x, kl = self.unconv_4(x)
+        kl_sum += kl
+
+        return x.squeeze(dim=1), kl_sum
+
+
+
+class DGBaN4BlocksLittleBayes(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(DGBaN4BlocksLittleBayes, self).__init__()
+        
+        self.base_name = 'DGBaN4Blocks'
+
+        # BLOCK 1
+        self.linear_1 = nn.Linear(84, 209)
+        self.linear_2 = nn.Linear(209, 524)
+        self.linear_3 = nn.Linear(524, 1311)
+        self.linear_4 = nn.Linear(1311, 3277)
+        self.linear_5 = nn.Linear(3277, 8192)
+
+        # BLOCK 2
+        self.unconv_11 = nn.ConvTranspose2d(512, 512, 3, 1, 1)
+        self.bn_11 = nn.BatchNorm2d(512)
+        self.unconv_12 = nn.ConvTranspose2d(512, 64, 1, 1, 0)
+        self.bn_12 = nn.BatchNorm2d(64)
+        self.unconv_13 = nn.ConvTranspose2d(64, 64, 3, 1, 1)
+        self.bn_13 = nn.BatchNorm2d(64)
+        self.unconv_14 = nn.ConvTranspose2d(64, 256, 1, 1, 0)
+        self.bn_14 = nn.BatchNorm2d(256)
+
+        self.shortcut_1 = nn.ConvTranspose2d(512, 256, 1, 1, 0, bias=False)
+        self.bn_shortcut_1 = nn.BatchNorm2d(256)
+
+        self.upscale_1 = BayesConvTranspose2d(256, 256, 1, 2, 0, output_padding=1, groups=256, bias=False)
+        self.bn_upscale_1 = nn.BatchNorm2d(256)
+
+        # BLOCK 3
+        self.unconv_21 = nn.ConvTranspose2d(256, 256, 3, 1, 1)
+        self.bn_21 = nn.BatchNorm2d(256)
+        self.unconv_22 = nn.ConvTranspose2d(256, 128, 3, 1, 1)
+        self.bn_22 = nn.BatchNorm2d(128)
+        self.unconv_24 = nn.ConvTranspose2d(128, 128, 3, 1, 1)
+        self.bn_24 = nn.BatchNorm2d(128)
+
+        self.shortcut_2 = nn.ConvTranspose2d(256, 128, 1, 1, 0, bias=False)
+        self.bn_shortcut_2 = nn.BatchNorm2d(128)
+
+        self.upscale_2 = BayesConvTranspose2d(128, 128, 1, 2, 0, output_padding=1, groups=128, bias=False)
+        self.bn_upscale_2 = nn.BatchNorm2d(128)
+
+        # BLOCK 4
+        self.unconv_31 = nn.ConvTranspose2d(128, 128, 3, 1, 1)
+        self.bn_31 = nn.BatchNorm2d(128)
+        self.unconv_32 = nn.ConvTranspose2d(128, 64, 3, 1, 1)
+        self.bn_32 = nn.BatchNorm2d(64)
+        self.unconv_34 = nn.ConvTranspose2d(64, 64, 3, 1, 1)
+        self.bn_34 = nn.BatchNorm2d(64)
+
+        self.shortcut_3 = nn.ConvTranspose2d(128, 64, 1, 1, 0, bias=False)
+        self.bn_shortcut_3 = nn.BatchNorm2d(64)
+
+        self.unconv_4 = BayesConvTranspose2d(64, 1, 5, 2, 2, output_padding=1)
+
+    def forward(self, x):
+        kl_sum = 0
+
+        # BLOCK 1
+        # x, kl = self.linear_1(x)
+        # x = F.relu(x)
+        # kl_sum += kl
+        # x, kl = self.linear_2(x)
+        # x = F.relu(x)
+        # kl_sum += kl
+        # x, kl = self.linear_3(x)
+        # x = F.relu(x)
+        # kl_sum += kl
+        # x, kl = self.linear_4(x)
+        # x = F.relu(x)
+        # kl_sum += kl
+        # x, kl = self.linear_5(x)
+        # x = F.relu(x)
+        # kl_sum += kl
+        
+        x = F.relu(self.linear_1(x))
+        x = F.relu(self.linear_2(x))
+        x = F.relu(self.linear_3(x))
+        x = F.relu(self.linear_4(x))
+        x = F.relu(self.linear_5(x))
+
+        z = x.view(x.size(0), 512, 4, 4)
+
+        # BLOCK 2
+        x = self.unconv_11(z)
+        x = F.relu(self.bn_11(x))
+
+        x = self.unconv_12(x)
+        x = F.relu(self.bn_12(x))
+        
+        x = self.unconv_13(x)
+        x = F.relu(self.bn_13(x))
+        
+        x = self.unconv_14(x)
+        x = self.bn_14(x)
+        
+        z = self.shortcut_1(z)
+        z = self.bn_shortcut_1(z)
+
+        x = F.relu(x + z)
+
+        x, kl = self.upscale_1(x)
+        z = self.bn_upscale_1(x)
+        kl_sum += kl
+
+        # BLOCK 3
+        x = self.unconv_21(x)
+        x = F.relu(self.bn_21(x))
+        
+        x = self.unconv_22(x)
+        x = F.relu(self.bn_22(x))
+        
+        x = self.unconv_24(x)
+        x = self.bn_24(x)
+        
+        z = self.shortcut_2(z)
+        z = self.bn_shortcut_2(z)
+
+        x = F.relu(x + z)
+
+        x, kl = self.upscale_2(x)
+        z = self.bn_upscale_2(x)
+        kl_sum += kl
+
+        # BLOCK 4
+        x = self.unconv_31(x)
+        x = F.relu(self.bn_31(x))
+        
+        x = self.unconv_32(x)
+        x = F.relu(self.bn_32(x))
+        
+        x = self.unconv_34(x)
+        x = self.bn_34(x)
+        
+        z = self.shortcut_3(z)
+        z = self.bn_shortcut_3(z)
+
+        x = F.relu(x + z)
+
         x, kl = self.unconv_4(x)
         kl_sum += kl
 

@@ -42,6 +42,7 @@ def train_bayes_model(
     train_fraction=0.8,
     noise=True,
     sigma=0.3,
+    features_degree=1,
     random_seed=42,
 
     # Training
@@ -75,6 +76,7 @@ f"""TRAINING SUMMARY:
      - train_fraction (-f): {train_fraction}
      - noise (--noise): {noise}
      - sigma (-sig): {sigma}
+     - features_degree (-fd): {features_degree}
      - random_seed (-r): {random_seed}
 
     Training:
@@ -106,7 +108,15 @@ f"""TRAINING SUMMARY:
     ### load dataset ###
     N = 32
     data_gen = getattr(generate_simple_dataset, data_type)(N, save_path, train_fraction)
-    train_loader, test_loader = data_gen.generate_dataset(data_size=data_size, batch_size=batch_size, noise=noise, sigma=sigma, seed=random_seed, device=device)
+    train_loader, test_loader = data_gen.generate_dataset(
+        data_size=data_size,
+        batch_size=batch_size,
+        noise=noise,
+        sigma=sigma,
+        features_degree=features_degree,
+        seed=random_seed,
+        device=device
+    )
 
 
     ### load model ###
@@ -133,7 +143,7 @@ f"""TRAINING SUMMARY:
                     if pre_trained_id == 'max':
                         model_path = os.path.join(root, name)
 
-                if int(pre_trained_id) == _id:
+                if pre_trained_id != 'max' and int(pre_trained_id) == _id:
                     model_path = os.path.join(root, name)
                         
             if name.startswith(base_name):
@@ -352,6 +362,7 @@ if __name__ == "__main__" :
     parser.add_argument('-f', '--train_fraction', type=float, help="Fraction of data used for training")
     parser.add_argument('--noise', type=bool, action=argparse.BooleanOptionalAction, help="Do we use a noised dataset")
     parser.add_argument('-sig', '--sigma', type=float, help="Sigma for the gaussian noise")
+    parser.add_argument('-fd', '--features_degree', type=int, help="Degree of the polynomial feature transformation")
     parser.add_argument('-r', '--random_seed', type=int, help="Random seed")
 
     parser.add_argument('-o', '--optim_name', type=str, help="Name of the optimizer")

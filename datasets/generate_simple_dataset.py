@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from sklearn.preprocessing import MinMaxScaler as mmScaler
+from sklearn.preprocessing import PolynomialFeatures
 
 
 
@@ -490,13 +491,13 @@ class single_random_ring():
         self.img_coor = np.array([(i, j) for i in range(self.N) for j in range(self.N)])
         self.n_features = 6
 
-    def generate_dataset(self, data_size=10_000, batch_size=64, noise=True, sigma=0.3, seed=42, device='cpu', test_return=False):
+    def generate_dataset(self, data_size=10_000, batch_size=64, noise=True, sigma=0.3, features_degree=1, seed=42, device='cpu', test_return=False):
         if noise:
             noise_tag = f'noise_{sigma}_'
         else:
             noise_tag = ''
-        features_path = f'{self.save_path}/{self.__class__.__name__}/features_{self.N}_{data_size}_{noise_tag}{seed}.npy'
-        imgs_path = f'{self.save_path}/{self.__class__.__name__}/images_{self.N}_{data_size}_{noise_tag}{seed}.npy'
+        features_path = f'{self.save_path}/{self.__class__.__name__}/features_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        imgs_path = f'{self.save_path}/{self.__class__.__name__}/images_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
         if os.path.exists(features_path):
             features = np.load(features_path)
             self.imgs = np.load(imgs_path)
@@ -538,6 +539,9 @@ class single_random_ring():
 
             if not test_return:
                 np.save(imgs_path, self.imgs)
+
+        self.poly = PolynomialFeatures(degree=features_degree)
+        features = self.poly.fit_transform(features)
 
         self.scaler = mmScaler()
         self.features = self.scaler.fit_transform(features)
