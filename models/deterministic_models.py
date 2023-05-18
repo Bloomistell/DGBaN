@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from typing import Any
 
 import torch
 from torch import nn
@@ -260,6 +261,52 @@ class DGBaNR_3_base(torch.nn.Module):
 
 
 
+class DGBase4Blocks(torch.nn.Module):
+    def __init__(
+            self,
+            img_size: int,
+            arch_dict: dict
+        ):
+        super(DGBase4Blocks, self).__init__()
+
+        self.img_size = img_size
+        self.arch = arch_dict
+
+
+        # BLOCK 1
+        self.linear_layers = arch_dict['linear_layers']
+
+        # BLOCK 2
+        self.scale_up_1 = blocks.View((8, 8))
+        self.unconv_1 = arch_dict['unconv_1']
+
+        # BLOCK 3
+        self.scale_up_2 = blocks.ScaleUp(arch_dict['scale_up_2_channels'], stride=2, padding=0, output_size=(16, 16))
+        self.unconv_2 = arch_dict['unconv_2']
+
+        # BLOCK 4
+        self.scale_up_3 = blocks.ScaleUp(arch_dict['scale_up_3_channels'], stride=2, padding=0, output_size=(32, 32))
+        self.unconv_3 = arch_dict['unconv_3']
+
+    def forward(self, x):
+        x = self.linear_layers(x)
+
+        x = self.scale_up_1(x)
+        x = self.unconv_1(x)
+
+        x = self.scale_up_2(x)
+        x = self.unconv_2(x)
+
+        x = self.scale_up_3(x)
+        x = self.unconv_3(x).squeeze(dim=1)
+
+        if self.arch['sigmoid']:
+            x = torch.sigmoid(x)
+
+        return x
+
+
+
 class DGBase5Blocks(torch.nn.Module):
     def __init__(
             self,
@@ -276,19 +323,19 @@ class DGBase5Blocks(torch.nn.Module):
         self.linear_layers = arch_dict['linear_layers']
 
         # BLOCK 2
-        self.scale_up_1 = blocks.View((4, 4))
+        self.scale_up_1 = blocks.View((2, 2))
         self.unconv_1 = arch_dict['unconv_1']
 
         # BLOCK 3
-        self.scale_up_2 = blocks.ScaleUp(arch_dict['scale_up_2_channels'], stride=2, padding=0, output_size=(8, 8))
+        self.scale_up_2 = blocks.ScaleUp(arch_dict['scale_up_2_channels'], stride=4, padding=0, output_size=(5, 5))
         self.unconv_2 = arch_dict['unconv_2']
 
         # BLOCK 4
-        self.scale_up_3 = blocks.ScaleUp(arch_dict['scale_up_3_channels'], stride=2, padding=0, output_size=(16, 16))
+        self.scale_up_3 = blocks.ScaleUp(arch_dict['scale_up_3_channels'], stride=3, padding=0, output_size=(14, 14))
         self.unconv_3 = arch_dict['unconv_3']
 
         # BLOCK 5
-        self.scale_up_4 = blocks.LastConv(arch_dict['scale_up_4_channels'], kernel=5, stride=2, padding=2, output_size=(32, 32))
+        self.scale_up_4 = blocks.LastConv(arch_dict['scale_up_4_channels'], kernel=5, stride=2, padding=0, output_size=(32, 32))
         self.unconv_4 = arch_dict['unconv_4']
 
     def forward(self, x):
@@ -324,24 +371,24 @@ class DGBase6Blocks(torch.nn.Module):
         self.linear_layers = arch_dict['linear_layers']
 
         # BLOCK 2
-        self.scale_up_1 = blocks.View((4, 4))
-        self.nuconv_1 = arch_dict['unconv_1']
+        self.scale_up_1 = blocks.View((2, 2))
+        self.unconv_1 = arch_dict['unconv_1']
 
         # BLOCK 3
-        self.scale_up_2 = blocks.ScaleUp(stride=2, padding=0, output_size=(8, 8))
-        self.nuconv_2 = arch_dict['unconv_2']
+        self.scale_up_2 = blocks.ScaleUp(arch_dict['scale_up_2_channels'], stride=2, padding=0, output_size=(4, 4))
+        self.unconv_2 = arch_dict['unconv_2']
 
         # BLOCK 4
-        self.scale_up_3 = blocks.ScaleUp(stride=2, padding=0, output_size=(16, 16))
-        self.nuconv_3 = arch_dict['unconv_3']
+        self.scale_up_3 = blocks.ScaleUp(arch_dict['scale_up_3_channels'], stride=2, padding=0, output_size=(8, 8))
+        self.unconv_3 = arch_dict['unconv_3']
 
         # BLOCK 5
-        self.scale_up_4 = blocks.LastConv(kernel_size=5, stride=2, padding=2, output_size=(32, 32))
-        self.nuconv_4 = arch_dict['unconv_4']
+        self.scale_up_4 = blocks.ScaleUp(arch_dict['scale_up_4_channels'], stride=2, padding=0, output_size=(16, 16))
+        self.unconv_4 = arch_dict['unconv_4']
         
         # BLOCK 6
-        self.scale_up_5 = blocks.LastConv(kernel_size=5, stride=2, padding=2, output_size=(32, 32))
-        self.nuconv_5 = arch_dict['unconv_5']
+        self.scale_up_5 = blocks.LastConv(arch_dict['scale_up_5_channels'], kernel=5, stride=2, padding=2, output_size=(32, 32))
+        self.unconv_5 = arch_dict['unconv_5']
 
     def forward(self, x):
         x = self.linear_layers(x)
@@ -354,3 +401,105 @@ class DGBase6Blocks(torch.nn.Module):
 
         return x.squeeze(dim=1)
 
+
+
+class DGBase7Blocks(torch.nn.Module):
+    def __init__(
+            self,
+            img_size: int,
+            arch_dict: dict
+        ):
+        super(DGBase7Blocks, self).__init__()
+
+        self.img_size = img_size
+
+        # BLOCK 1
+        self.linear_layers = arch_dict['linear_layers']
+
+        # BLOCK 2
+        self.scale_up_1 = blocks.View((2, 2))
+        self.unconv_1 = arch_dict['unconv_1']
+
+        # BLOCK 3
+        self.scale_up_2 = blocks.ScaleUp(arch_dict['scale_up_2_channels'], stride=2, padding=0, output_size=(3, 3))
+        self.unconv_2 = arch_dict['unconv_2']
+
+        # BLOCK 4
+        self.scale_up_3 = blocks.ScaleUp(arch_dict['scale_up_3_channels'], stride=2, padding=0, output_size=(5, 5))
+        self.unconv_3 = arch_dict['unconv_3']
+
+        # BLOCK 5
+        self.scale_up_4 = blocks.ScaleUp(arch_dict['scale_up_4_channels'], stride=2, padding=1, output_size=(7, 7))
+        self.unconv_4 = arch_dict['unconv_4']
+        
+        # BLOCK 6
+        self.scale_up_5 = blocks.ScaleUp(arch_dict['scale_up_5_channels'], stride=2, padding=2, output_size=(10, 10))
+        self.unconv_5 = arch_dict['unconv_5']
+        
+        # BLOCK 7
+        self.scale_up_6 = blocks.ScaleUp(arch_dict['scale_up_6_channels'], stride=2, padding=2, output_size=(16, 16))
+        self.unconv_6 = arch_dict['unconv_6']
+        
+
+        self.last_conv = blocks.LastConv(arch_dict['last_conv_channels'], kernel=5, stride=2, padding=2, output_size=(32, 32))
+
+    def forward(self, x):
+        x = self.linear_layers(x)
+
+        x = self.unconv_1(self.scale_up_1(x))
+        x = self.unconv_2(self.scale_up_2(x))
+        x = self.unconv_3(self.scale_up_3(x))
+        x = self.unconv_4(self.scale_up_4(x))
+        x = self.unconv_5(self.scale_up_5(x))
+        x = self.unconv_6(self.scale_up_6(x))
+        x = self.last_conv(x)
+
+        return x.squeeze(dim=1)
+
+
+
+class DGBaseConv17(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(DGBaseConv17, self).__init__()
+
+        self.linear_layers = blocks.LinearNormAct(28, 1024, 5)
+
+        self.conv_layers = nn.Sequential(
+            blocks.BottleNeck(256, 256),
+            blocks.Conv2x3x3NormAct(256, 128, shortcut=blocks.Conv1x1BnReLU(256, 128)),
+            blocks.ResidualAdd(
+                nn.Sequential(
+                    blocks.ScaleUp(128, 2, 0, (4, 4)),
+                    blocks.Conv3x3BnReLU(128, 128)
+                ),
+                blocks.ConvNormAct(128, 128, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(128, 64, shortcut=blocks.Conv1x1BnReLU(128, 64)),
+            blocks.ResidualAdd(
+                nn.Sequential(
+                    blocks.ScaleUp(64, 2, 0, (8, 8)),
+                    blocks.Conv3x3BnReLU(64, 64)
+                ),
+                blocks.ConvNormAct(64, 64, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(64, 32, shortcut=blocks.Conv1x1BnReLU(64, 32)),
+            blocks.ResidualAdd(
+                nn.Sequential(
+                    blocks.ScaleUp(32, 2, 0, (16, 16)),
+                    blocks.Conv3x3BnReLU(32, 32)
+                ),
+                blocks.ConvNormAct(32, 32, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(32, 16, shortcut=blocks.Conv1x1BnReLU(32, 16)),
+            blocks.LastConv(16, 5, 2, 2, (32, 32))
+        )
+
+    def forward(self, x):
+        x = self.linear_layers(x)
+
+        x = x.view(x.size(0), 256, 2, 2)
+
+        x = self.conv_layers(x)
+        
+        return x.squeeze(dim=1)
+    

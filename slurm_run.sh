@@ -3,23 +3,24 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=20:00:00
 #SBATCH --mem=32GB
-#SBATCH --cpus-per-task=4
-#SBATCH -o /home/J000000000007/DGBaN_project/run0_log.stdout
+#SBATCH --cpus-per-task=2
+#SBATCH -o /home/J000000000007/DGBaN_project/run6_1_log.stdout
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=6
 
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate DGBaN
 
 cd /home/J000000000007/DGBaN_project/DGBaN/
-python3 -u training/train_bayesian_model.py \
- -n DGBaN4BlocksLittleBayes \
+python3 -u training/train_model.py \
+ -n DGBaNConv17 \
+ --bayesian \
  --no-random_init \
- -a sigmoid \
+ -a no_activation_function \
  --no-use_base \
  --no-vessel \
- --no-pre_trained \
+ --no-pretrained \
  -id max \
  -s ../save_data \
  -i 1 \
@@ -31,46 +32,23 @@ python3 -u training/train_bayesian_model.py \
  -f 0.8 \
  --noise \
  -sig 0.3 \
- -fd 3 \
+ -fd 2 \
  -r 42 \
 \
  -o Adam \
  -l mse_loss \
- -mc 5 \
+ -kl 0.1 \
+ -mc 0 \
  -lr 1e-2 \
  -lrs 0.95 \
  -stp 1000 \
- --mean_training \
- --no-std_training \
+ --no-mean_training \
+ --std_training \
 
-# deterministic:
-# python3 -u training/train_deterministic_model.py \
-#  -t single_random_ring \
-#  -n DGBaNR_3_base \
-#  -a sigmoid \
-#  --no-pre_trained \
-#  -id max \
-#  -s ../save_data \
-#  -i 1 \
-# \
-#  -d 640000 \
-#  -e 200 \
-#  -b 64 \
-#  -f 0.8 \
-#  --no-noise \
-#  -fd 3 \
-#  -r 42 \
-# \
-#  -o Adam \
-#  -l mse_loss \
-#  -lr 1e-2 \
-#  -lrs 0.95 \
-#  -stp 1000 \
- 
 # grid search:
 # python3 -u training/deterministic_model_grid_search.py \
-#  -id 0 \
-#  -tpm 0.5 \
+#  -id 8 \
+#  -tpm 10 \
 # \
 #  -s ../save_data \
 #  -i 1 \
@@ -78,10 +56,10 @@ python3 -u training/train_bayesian_model.py \
 #  -t single_random_ring \
 #  -d 640000 \
 #  -e 200 \
-#  -b 64 \
+#  -b 256 \
 #  -f 0.8 \
 #  --no-noise \
-#  -fd 3 \
+#  -fd 2 \
 #  -r 42 \
 # \
 #  -o Adam \

@@ -4,6 +4,8 @@ from collections import OrderedDict
 
 import argparse
 
+import pandas as pd
+
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -11,33 +13,61 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 from datasets import generate_simple_dataset
-from models import DGBase5Blocks
+from models import DGBase7Blocks
 from training import losses
 from models.deterministic_blocks import *
 from utils import *
 
 
-dict_blocks = {0:Conv3x3x3NormAct, 1:BottleNeck, 2:LinearBottleNeck, 3:Conv3x11x3NormAct}
 
-block_choice = []
-while len(block_choice) < 64:
-    seq = list(np.random.choice([0, 1, 2, 3], size=3))
-    if seq not in block_choice:
-        block_choice.append(seq) 
+# dict_blocks = {0:BottleNeck, 1:Conv3x11x3NormAct, 2:Conv3x3x3NormAct}
 
-models = {}
-for i in range(64):
-    models[f'model_{i+1}'] = {
-        'linear_layers':LinearNormAct(6, 8192, 5),
-        'scale_up_1_channels':512,
-        'unconv_1':dict_blocks[block_choice[i][0]](512, 256),
-        'scale_up_2_channels':256,
-        'unconv_2':dict_blocks[block_choice[i][1]](256, 128),
-        'scale_up_3_channels':128,
-        'unconv_3':dict_blocks[block_choice[i][2]](128, 64),
-        'scale_up_4_channels':64,
-        'unconv_4':torch.nn.Identity()
-    }
+# block_choice = []
+# for i in range(3):
+#     for j in range(3):
+#         for k in range(3):
+#             block_choice.append([i, j, k])
+
+# models = {}
+# for i in range(27):
+#     models[f'model_{i+1}_sigmoid'] = {
+#         'linear_layers':LinearNormAct(6, 215, 7),
+#         'scale_up_1_channels':128,
+#         'unconv_1':dict_blocks[block_choice[i][0]](128, 64),
+#         'scale_up_2_channels':64,
+#         'unconv_2':dict_blocks[block_choice[i][1]](64, 32),
+#         'scale_up_3_channels':32,
+#         'unconv_3':dict_blocks[block_choice[i][2]](32, 1, last_layer=True),
+#         'sigmoid':True
+#     }
+#     models[f'model_{i+1}'] = {
+#         'linear_layers':LinearNormAct(84, 8192, 4),
+#         'scale_up_1_channels':128,
+#         'unconv_1':dict_blocks[block_choice[i][0]](128, 64),
+#         'scale_up_2_channels':64,
+#         'unconv_2':dict_blocks[block_choice[i][1]](64, 32),
+#         'scale_up_3_channels':32,
+#         'unconv_3':dict_blocks[block_choice[i][2]](32, 1, last_layer=True),
+#         'sigmoid':False
+#     }
+
+
+models = {'model_0':{
+    'linear_layers':LinearNormAct(28, 1024, 5),
+    'scale_up_1_channels':256,
+    'unconv_1':BottleNeck(256, 128),
+    'scale_up_2_channels':128,
+    'unconv_2':Conv3x3x3NormAct(128, 64),
+    'scale_up_3_channels':64,
+    'unconv_3':Conv3x3x3NormAct(64, 32),
+    'scale_up_4_channels':32,
+    'unconv_4':Conv3x3x3NormAct(32, 16),
+    'scale_up_5_channels':16,
+    'unconv_5':Conv3x3x3NormAct(16, 8),
+    'scale_up_6_channels':8,
+    'unconv_6':Conv3x3x3NormAct(8, 4),
+    'last_conv_channels':4
+}}
 
 
 
@@ -57,6 +87,7 @@ def train_model(
     batch_size=64,
     train_fraction=0.8,
     noise=False,
+    features_degree=3,
     random_seed=42,
 
     # Training
@@ -103,7 +134,7 @@ TRAINING SUMMARY:
     ### load dataset ###
     N = 32
     data_gen = getattr(generate_simple_dataset, data_type)(N, save_path, train_fraction)
-    train_loader, test_loader = data_gen.generate_dataset(data_size=data_size, batch_size=batch_size, noise=noise, seed=random_seed, device=device)
+    train_loader, test_loader = data_gen.generate_dataset(data_size=data_size, batch_size=batch_size, noise=noise, features_degree=features_degree, seed=random_seed, device=device)
 
 
     ### set loss ###
@@ -125,7 +156,7 @@ TRAINING SUMMARY:
             print(f"{block_name}: {block.__name__ if isinstance(block, type) else block}")
         
         print("\n    Creating model...")
-        generator = DGBase5Blocks(N, model_dict)
+        generator = DGBase7Blocks(N, model_dict)
         print("    SUCCESS\n")
 
         print(f"    Number of trainable parameters: {count_params(generator):,}\n")
@@ -152,14 +183,22 @@ TRAINING SUMMARY:
 
     print("Beginning grid search...")
 
+    grid_search_dict = {"unconv_1": [], "unconv_2": [], "unconv_3": [], "num_parameters": [],
+        "speed": [], "final_train_loss": [], "final_test_loss": [],
+        "total_time": [], "total_epoch": [], "epoch_per_hour": []}
     for model_name, model_dict in models.items():
         ### Starting time ###
         start_training = time.time()
 
+        grid_search_dict['unconv_1'].append(model_dict['unconv_1'].name)
+        grid_search_dict['unconv_2'].append(model_dict['unconv_2'].name)
+        grid_search_dict['unconv_3'].append(model_dict['unconv_3'].name)
 
         ### load model ###
         print(f"Training {model_name}:")
-        generator = DGBase5Blocks(N, model_dict)
+        generator = DGBase7Blocks(N, model_dict)
+
+        grid_search_dict['num_parameters'].append(count_params(generator))
  
         print(f'\nModel path: {save_path}/{data_type}/{optim_name}_{loss_name}/grid_search_{grid_search_id}/{model_name}.pt\n')
 
@@ -236,12 +275,12 @@ TRAINING SUMMARY:
                         len_adjust = len(f" |{bar}| {2 * progress}% - ") - 2
                         print(f'Validation:{" " * len_adjust}loss {test_loss / test_steps:.2g}')
     
-                if (i + scheduler_step) % step == 0 and i != 0:
-                    scheduler.step()
-                    scheduler_adjust = True                
+                # if (i + scheduler_step) % step == 0 and i != 0:
+                #     scheduler.step()
+                #     scheduler_adjust = True                
 
             if not scheduler_adjust:
-                scheduler_step += train_steps
+                scheduler.step()
 
             if epoch % save_interval == 0:
                 torch.save(
@@ -262,6 +301,13 @@ TRAINING SUMMARY:
  - total epoch: {epoch}
  - epoch per hour: {epoch / total_hours:.0f} epoch/h
 """)
+        
+        grid_search_dict['speed'].append(batch_speed)
+        grid_search_dict['final_train_loss'].append(train_loss_scaled)
+        grid_search_dict['final_test_loss'].append(test_loss / test_steps)
+        grid_search_dict['total_time'].append(f"{int(total_hours)}h {total_minutes:.0f}min")
+        grid_search_dict['total_epoch'].append(epoch)
+        grid_search_dict['epoch_per_hour'].append(epoch / total_hours)
 
 
 
@@ -280,6 +326,7 @@ if __name__ == "__main__" :
     parser.add_argument('-b', '--batch_size', type=int, help="Batch size")
     parser.add_argument('-f', '--train_fraction', type=float, help="Fraction of data used for training")
     parser.add_argument('--noise', type=bool, action=argparse.BooleanOptionalAction, help="Do we use a noised dataset")
+    parser.add_argument('-fd', '--features_degree', type=int, help="Degree of the polynomial feature transformation")
     parser.add_argument('-r', '--random_seed', type=int, help="Random seed")
 
     parser.add_argument('-o', '--optim_name', type=str, help="Name of the optimizer")

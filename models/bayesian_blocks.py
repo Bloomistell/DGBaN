@@ -43,10 +43,10 @@ class View(nn.Module):
 
 
 class ScaleUp(nn.Module):
-    def __init__(self, channels, stride, padding, output_padding):
+    def __init__(self, in_channels, out_channels, stride, padding, output_padding):
         super(ScaleUp, self).__init__()
         # NOTE: you have to modify the source code for ConvTranspose2dReparameterization because groups and dilation are inverted
-        self.conv_t = BayesConvTranspose2d(channels, channels, 1, stride, padding, output_padding=output_padding, groups=channels)
+        self.conv_t = BayesConvTranspose2d(in_channels, out_channels, 1, stride, padding, output_padding=output_padding, groups=out_channels)
 
     def forward(self, x):
         return self.conv_t(x)
@@ -58,7 +58,6 @@ class LinearNormAct(nn.Module):
         in_channels: int,
         out_channels: int,
         n_layers: int,
-        norm: nn.Module = None,
         act: nn.Module = nn.ReLU,
         **kwargs
     ):
@@ -68,25 +67,19 @@ class LinearNormAct(nn.Module):
 
         factor = (out_channels/in_channels)**(1/n_layers)
 
-        self.linears = []
-        self.norms_acts = []
+        self.linear_act = []
         for i in range(n_layers):
-            self.linears.append(BayesLinear(int(in_channels * factor**i), int(in_channels * factor**(i+1))))
-            if norm:
-                self.norms_acts.append(nn.Sequential(norm(int(in_channels * factor**(i+1))), act()))
-            else:
-                self.norms_acts.append(act())
+            self.linear_act.append(BayesLinear(int(in_channels * factor**i), int(in_channels * factor**(i+1))))
+            self.linear_act.append(act())
         
-        self.linears = nn.ModuleList(self.linears)
-        self.norms_acts = nn.ModuleList(self.norms_acts)
-        self.act = act()
+        self.linear_act = nn.ModuleList(self.linear_act)
 
     def forward(self, x):
         kl_sum = 0
-        for i in range(self.n_layers):
-            x, kl = self.linears[i](x)
+        for i in range(0, self.n_layers * 2, 2):
+            x, kl = self.linear_act[i](x)
             kl_sum += kl
-            x = self.norms_acts[i](x)
+            x = self.linear_act[i+1](x)
 
         return x, kl_sum
 
@@ -100,6 +93,7 @@ class ConvNormAct(nn.Module):
         kernel_size: int,
         stride: int,
         padding: int,
+        output_padding: int = 0,
         norm: nn.Module = nn.BatchNorm2d,
         act: nn.Module = nn.ReLU,
         **kwargs
@@ -112,6 +106,7 @@ class ConvNormAct(nn.Module):
                 kernel_size=kernel_size,
                 stride=stride,
                 padding=padding,
+                output_padding=output_padding
             )
         self.norm_act = nn.Sequential(norm(out_channels), act())
 
@@ -130,7 +125,7 @@ class ResidualAdd(nn.Module):
         super().__init__()
         self.block = block
         self.shortcut = shortcut
-        
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         kl_sum = 0
         res = x
@@ -139,28 +134,22 @@ class ResidualAdd(nn.Module):
 
         if self.shortcut:
             res, kl = self.shortcut(res)
-        x += res
+        x = x + res
         kl_sum += kl
         return x, kl_sum
 
 
 class BottleNeck(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, reduction: int = 4):
+    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None, reduction: int = 4):
         reduced_channels = out_channels // reduction
         super(BottleNeck, self).__init__()
         self.block = ResidualAdd(
             BayesSequential(
-                ConvNormAct(in_channels, out_channels, 3, 1, 1),
-                # wide -> narrow
                 Conv1x1BnReLU(out_channels, reduced_channels),
-                # narrow -> narrow
                 Conv3x3BnReLU(reduced_channels, reduced_channels),
-                # narrow -> wide
                 Conv1x1BnReLU(reduced_channels, out_channels, act=nn.Identity),
             ),
-            shortcut=Conv1x1BnReLU(in_channels, out_channels)
-            if in_channels != out_channels
-            else None,
+            shortcut,
         )
         
     def forward(self, x):
@@ -170,22 +159,16 @@ class BottleNeck(nn.Module):
 
 
 class LinearBottleNeck(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, reduction: int = 4):
+    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None, reduction: int = 4):
         reduced_in_channels = out_channels // reduction
         super(LinearBottleNeck, self).__init__()
         self.block = ResidualAdd(
             BayesSequential(
-                ConvNormAct(in_channels, out_channels, 3, 1, 1),
-                # wide -> narrow
                 Conv1x1BnReLU(out_channels, reduced_in_channels),
-                # narrow -> narrow
                 Conv3x3BnReLU(reduced_in_channels, reduced_in_channels),
-                # narrow -> wide
                 Conv1x1BnReLU(reduced_in_channels, out_channels, act=nn.Identity),
             ),
-            shortcut=Conv1x1BnReLU(in_channels, out_channels)
-            if in_channels != out_channels
-            else None,
+            shortcut,
         )
         
     def forward(self, x):
@@ -195,18 +178,14 @@ class LinearBottleNeck(nn.Module):
 
 
 class Conv3x11x3NormAct(nn.Sequential):
-    def __init__(self, in_channels: int, out_channels: int):
+    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None):
         super(Conv3x11x3NormAct, self).__init__()
         self.block = ResidualAdd(
             BayesSequential(
-                ConvNormAct(in_channels, out_channels, 3, 1, 1),
-                ConvNormAct(out_channels, out_channels, (3, 1), 1, (1, 0)),
-                ConvNormAct(out_channels, out_channels, (1, 3), 1, (0, 1)),
-                ConvNormAct(out_channels, out_channels, 3, 1, 1, act=nn.Identity)
+                ConvNormAct(in_channels, in_channels, (3, 1), 1, (1, 0)),
+                ConvNormAct(in_channels, out_channels, (1, 3), 1, (0, 1), act=nn.Identity)
             ),
-            shortcut=Conv1x1BnReLU(in_channels, out_channels)
-            if in_channels != out_channels
-            else None,
+            shortcut,
         )
 
     def forward(self, x):
@@ -215,18 +194,15 @@ class Conv3x11x3NormAct(nn.Sequential):
         return x, kl
 
         
-class Conv3x3x3NormAct(nn.Sequential):
-    def __init__(self, in_channels: int, out_channels: int):
-        super(Conv3x3x3NormAct, self).__init__()
+class Conv2x3x3NormAct(nn.Sequential):
+    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None):
+        super(Conv2x3x3NormAct, self).__init__()
         self.block = ResidualAdd(
             BayesSequential(
-                ConvNormAct(in_channels, out_channels, 3, 1, 1),
-                ConvNormAct(out_channels, out_channels, 3, 1, 1),
-                ConvNormAct(out_channels, out_channels, 3, 1, 1, act=nn.Identity)
+                ConvNormAct(in_channels, in_channels, 3, 1, 1),
+                ConvNormAct(in_channels, out_channels, 3, 1, 1, act=nn.Identity)
             ),
-            shortcut=Conv1x1BnReLU(in_channels, out_channels)
-            if in_channels != out_channels
-            else None,
+            shortcut,
         )
 
     def forward(self, x):
