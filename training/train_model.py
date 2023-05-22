@@ -160,6 +160,8 @@ f"""TRAINING SUMMARY:
         device=device
     )
 
+    adjust = data_gen.noise_delta
+
 
     ### load model ###
     if bayesian:
@@ -201,7 +203,7 @@ f"""TRAINING SUMMARY:
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=lr_step, verbose=True)
 
     if loss_name in dir(losses):
-        loss_fn = getattr(losses, loss_name)(N, device=device)
+        loss_fn = getattr(losses, loss_name)(N=N, device=device, adjust=data_gen.noise_delta)
     
     elif loss_name in dir(torch.nn.functional):
         loss_fn = getattr(torch.nn.functional, loss_name)
@@ -243,6 +245,7 @@ f"""TRAINING SUMMARY:
             kl_factor,
             num_mc,
             loss_fn,
+            # adjust,
             batch_size,
             optimizer,
             scheduler,

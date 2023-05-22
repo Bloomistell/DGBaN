@@ -496,11 +496,15 @@ class single_random_ring():
             noise_tag = f'noise_{sigma}_'
         else:
             noise_tag = ''
+
         features_path = f'{self.save_path}/{self.__class__.__name__}/features_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
         imgs_path = f'{self.save_path}/{self.__class__.__name__}/images_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        noise_delta_path = f'{self.save_path}/{self.__class__.__name__}/noise_delta_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        
         if os.path.exists(features_path):
-            features = np.load(features_path)
+            self.features = np.load(features_path)
             self.imgs = np.load(imgs_path)
+            self.noise_delta = np.load(noise_delta_path)
 
         else:
             np.random.seed(seed)
@@ -514,7 +518,7 @@ class single_random_ring():
             theta_1 = np.random.choice(self.thetas, size=data_size)
             phi_1 = np.random.choice(self.phis, size=data_size)
             
-            features = np.concatenate([
+            self.features = np.concatenate([
                 center_x_1.reshape(-1, 1),
                 center_y_1.reshape(-1, 1),
                 mean_1.reshape(-1, 1),
@@ -522,36 +526,43 @@ class single_random_ring():
                 theta_1.reshape(-1, 1),
                 phi_1.reshape(-1, 1)
             ], axis=1)
-            if not test_return:
-                np.save(features_path, features)
 
-            imgs_1 = self.gaussian_rings(data_size, center_1, mean_1, sig_1, theta_1, phi_1)
+            self.imgs_1 = self.gaussian_rings(data_size, center_1, mean_1, sig_1, theta_1, phi_1)
 
             if noise:
                 val = np.arange(0, 2, 0.01)
                 distr = np.exp(-(val - 1)**2 / sigma**2)
                 kernel = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)]) # adds gaussian noise
+                self.imgs = (self.imgs_1 * kernel)
 
-                self.imgs = (imgs_1 * kernel).reshape((data_size, self.N, self.N)) / 2
+                kernel_bis = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)])
+                self.imgs_bis = (self.imgs_1 * kernel_bis)
+                self.noise_delta = np.abs(self.imgs - self.imgs_bis).mean() / 2
+
+                self.imgs = self.imgs.reshape((data_size, self.N, self.N)) / 2
 
             else:
-                self.imgs = imgs_1.reshape((data_size, self.N, self.N)) / 2
+                self.imgs = self.imgs_1.reshape((data_size, self.N, self.N)) / 2
+                
+                self.noise_delta = 0
 
             if not test_return:
+                np.save(features_path, self.features)
                 np.save(imgs_path, self.imgs)
+                np.save(noise_delta_path, self.noise_delta)
 
         self.poly = PolynomialFeatures(degree=features_degree)
-        features = self.poly.fit_transform(features)
+        transformed_features = self.poly.fit_transform(self.features)
 
         self.scaler = mmScaler()
-        self.features = self.scaler.fit_transform(features)
+        self.transformed_features = self.scaler.fit_transform(transformed_features)
 
         train_dataset = TensorDataset(
-            torch.tensor(self.features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
+            torch.tensor(self.transformed_features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
             torch.tensor(self.imgs[:int(self.train_fraction * data_size)], dtype=torch.float, device=device)
         )
         test_dataset = TensorDataset(
-            torch.tensor(self.features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
+            torch.tensor(self.transformed_features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
             torch.tensor(self.imgs[int(self.train_fraction * data_size):], dtype=torch.float, device=device)
         )
         
@@ -569,7 +580,17 @@ class single_random_ring():
 
         return np.exp(-(radius - mean[:, np.newaxis])**2 / sig[:, np.newaxis]**2)
 
-    def gaussian_from_features(self, center_x, center_y, mean, sig, theta, phi):
+    def random_sample(self, n_samples: int):
+        data_size = len(self.features)
+        idx = np.random.choice(data_size, size=n_samples)
+
+        features = self.features[idx]
+        transformed_features = self.scaler.transform(self.poly.transform(features))
+        imgs = self.imgs[idx]
+
+        return features, transformed_features, imgs
+
+    def ring_from_features(self, center_x, center_y, mean, sig, theta, phi):
         centered = self.img_coor - (center_x, center_y)
         radius = np.linalg.norm(centered, axis=1)
 

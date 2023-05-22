@@ -137,6 +137,7 @@ def bayesian_training_loop(
         kl_factor,
         num_mc,
         loss_fn,
+        # adjust,
         batch_size,
         optimizer,
         scheduler,
@@ -254,6 +255,9 @@ def bayesian_training_loop(
                 model.state_dict(),
                 model_save_path
             )
+
+        if kl_factor < 1:
+            kl_factor *= 5
 
 
 

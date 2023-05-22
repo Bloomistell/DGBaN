@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 
 class GaussianLoss(nn.Module):
-    def __init__(self, N, sigma=0.3, device='cpu'):
+    def __init__(self, N, sigma=0.3, device='cpu', *args, **kwargs):
         super(GaussianLoss, self).__init__()
 
         self.sigma = torch.full((N, N), sigma, device=device)
@@ -27,7 +27,7 @@ class GaussianLoss(nn.Module):
         
 
 class LogL1Loss(nn.Module):
-    def __init__(self, N=None, sigma=None, device=None):
+    def __init__(self, *args, **kwargs):
         super(LogL1Loss, self).__init__()
 
     def forward(self, pred, target):
@@ -44,3 +44,30 @@ class LogL1Loss(nn.Module):
 
         return log_l1_loss
 
+
+class AbsMeanDeltaLoss(nn.Module): # NOTE: it supposes that the probabilistic distribution around the value is symetric
+    def __init__(self, *args, **kwargs):
+        super(AbsMeanDeltaLoss, self).__init__()
+
+    def forward(self, pred, target):
+        mean_delta = torch.mean(pred - target)
+        return torch.abs(mean_delta)
+        
+
+class L1LossAdjust(nn.Module):
+    def __init__(self, adjust, device, *args, **kwargs):
+        super(L1LossAdjust, self).__init__()
+        self.adjust = torch.tensor(adjust, device=device)
+
+    def forward(self, pred, target):
+        l1_loss = F.l1_loss(pred, target)
+
+        return torch.abs(l1_loss - self.adjust)
+
+
+class MinLoss(nn.Module):
+    def __init__(self):
+        super(MinLoss, self).__init__()
+
+    def forward(self, pred, target):
+        l1_loss = torch.abs(pred - target).min(axis=0)

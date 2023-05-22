@@ -3,11 +3,11 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=20:00:00
 #SBATCH --mem=32GB
-#SBATCH --cpus-per-task=2
-#SBATCH -o /home/J000000000007/DGBaN_project/run6_1_log.stdout
+#SBATCH --cpus-per-task=1
+#SBATCH -o /home/J000000000007/DGBaN_project/run0_log.stdout
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export CUDA_VISIBLE_DEVICES=6
+export CUDA_VISIBLE_DEVICES=0
 
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate DGBaN
@@ -36,8 +36,8 @@ python3 -u training/train_model.py \
  -r 42 \
 \
  -o Adam \
- -l mse_loss \
- -kl 0.1 \
+ -l l1_loss \
+ -kl 0.000000001 \
  -mc 0 \
  -lr 1e-2 \
  -lrs 0.95 \
