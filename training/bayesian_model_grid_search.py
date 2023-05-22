@@ -17,6 +17,7 @@ from models.bayesian_blocks import *
 from utils import *
 
 
+
 models = {
     f'model_1':{
         'linear_layers':LinearNormAct(6, 8192, 5),
