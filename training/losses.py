@@ -54,9 +54,9 @@ class AbsMeanDeltaLoss(nn.Module): # NOTE: it supposes that the probabilistic di
         return torch.abs(mean_delta)
         
 
-class L1LossAdjust(nn.Module):
+class L1AdjustLoss(nn.Module):
     def __init__(self, adjust, device, *args, **kwargs):
-        super(L1LossAdjust, self).__init__()
+        super(L1AdjustLoss, self).__init__()
         self.adjust = torch.tensor(adjust, device=device)
 
     def forward(self, pred, target):
@@ -71,3 +71,14 @@ class MinLoss(nn.Module):
 
     def forward(self, pred, target):
         l1_loss = torch.abs(pred - target).min(axis=0)
+
+
+class MSEAdjustLoss(nn.Module):
+    def __init__(self, adjust, device, *args, **kwargs):
+        super(MSEAdjustLoss, self).__init__()
+        self.adjust = torch.tensor(adjust, device=device)
+
+    def forward(self, pred, target):
+        mse_loss = F.mse_loss(pred, target)
+
+        return torch.abs(mse_loss - self.adjust)

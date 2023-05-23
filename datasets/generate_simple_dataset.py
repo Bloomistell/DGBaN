@@ -1,5 +1,7 @@
 import os
 
+import pickle
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -504,7 +506,7 @@ class single_random_ring():
         if os.path.exists(features_path):
             self.features = np.load(features_path)
             self.imgs = np.load(imgs_path)
-            self.noise_delta = np.load(noise_delta_path)
+            self.noise_delta = np.load(noise_delta_path, allow_pickle=True)
 
         else:
             np.random.seed(seed)
@@ -529,6 +531,7 @@ class single_random_ring():
 
             self.imgs_1 = self.gaussian_rings(data_size, center_1, mean_1, sig_1, theta_1, phi_1)
 
+            self.noise_delta = {'mse_loss':{'mean':0., 'std':0.}, 'l1_loss':{'mean':0., 'std':0.}}
             if noise:
                 val = np.arange(0, 2, 0.01)
                 distr = np.exp(-(val - 1)**2 / sigma**2)
@@ -537,19 +540,26 @@ class single_random_ring():
 
                 kernel_bis = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)])
                 self.imgs_bis = (self.imgs_1 * kernel_bis)
-                self.noise_delta = np.abs(self.imgs - self.imgs_bis).mean() / 2
 
-                self.imgs = self.imgs.reshape((data_size, self.N, self.N)) / 2
+                self.noise_delta['l1_loss']['mean'] = np.abs(self.imgs - self.imgs_bis).mean(axis=1)
+                self.noise_delta['l1_loss']['std'] = self.noise_delta['l1_loss']['mean'].std()
+                self.noise_delta['l1_loss']['mean'] = self.noise_delta['l1_loss']['mean'].mean()
+
+                self.noise_delta['mse_loss']['mean'] = ((self.imgs - self.imgs_bis)**2).mean(axis=1)
+                self.noise_delta['mse_loss']['std'] = self.noise_delta['mse_loss']['mean'].std()
+                self.noise_delta['mse_loss']['mean'] = self.noise_delta['mse_loss']['mean'].mean()
+
+                self.imgs = self.imgs.reshape((data_size, self.N, self.N))
 
             else:
-                self.imgs = self.imgs_1.reshape((data_size, self.N, self.N)) / 2
+                self.imgs = self.imgs_1.reshape((data_size, self.N, self.N))
                 
-                self.noise_delta = 0
-
             if not test_return:
                 np.save(features_path, self.features)
                 np.save(imgs_path, self.imgs)
-                np.save(noise_delta_path, self.noise_delta)
+                
+                self.noise_delta = np.array(self.noise_delta)
+                np.save(noise_delta_path, self.noise_delta, allow_pickle=True)
 
         self.poly = PolynomialFeatures(degree=features_degree)
         transformed_features = self.poly.fit_transform(self.features)

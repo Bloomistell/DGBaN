@@ -28,7 +28,7 @@ def get_model_paths(model_name, activation_function, save_path, data_type, optim
 
     for _, _, files in os.walk(save_path):
         for name in files:
-            if name.startswith(start_name):
+            if name.startswith(start_name) and name[-3:] != 'txt':
                 _id = int(name.split('_')[-1][:-3])
                 if max_id < _id:
                     max_id = _id
@@ -36,11 +36,13 @@ def get_model_paths(model_name, activation_function, save_path, data_type, optim
     if bayesian:
         tensorboard_path = f'{save_path}/{data_type}/{optim_name}_{loss_name}_{num_mc}/{model_name}_{activation_function}/tensorboard_{max_id+1}/'
         model_save_path = f'{save_path}/{data_type}/{optim_name}_{loss_name}_{num_mc}/{model_name}_{activation_function}/{model_name}_{activation_function}_{max_id+1}.pt'
+        summary_path = f'{save_path}/{data_type}/{optim_name}_{loss_name}_{num_mc}/{model_name}_{activation_function}/{model_name}_{activation_function}_{max_id+1}.txt'
     else:
         tensorboard_path = f'{save_path}/{data_type}/{optim_name}_{loss_name}/{model_name}_{activation_function}/tensorboard_{max_id+1}/'
         model_save_path = f'{save_path}/{data_type}/{optim_name}_{loss_name}/{model_name}_{activation_function}/{model_name}_{activation_function}_{max_id+1}.pt'
+        summary_path = f'{save_path}/{data_type}/{optim_name}_{loss_name}/{model_name}_{activation_function}/{model_name}_{activation_function}_{max_id+1}.txt'
 
-    return max_id, model_save_path, tensorboard_path
+    return max_id, model_save_path, tensorboard_path, summary_path
 
 
 
@@ -72,7 +74,7 @@ def load_base(activation_function, pretrain_id, model, save_path):
 
     for root, dirs, files in os.walk(save_path):
         for name in files: 
-            if name.startswith(base_name):
+            if name.startswith(base_name) and name[-3:] != 'txt':
                 _id = int(name.split('_')[-1][:-3])
                 if max_base_id < _id:
                     max_base_id = _id
@@ -102,7 +104,7 @@ def load_vessel_base(activation_function, pretrain_id, model, save_path):
 
     for root, dirs, files in os.walk(save_path):
         for name in files:        
-            if name.startswith(base_name):
+            if name.startswith(base_name) and name[-3:] != 'txt':
                 _id = int(name.split('_')[-1][:-3])
                 if max_base_id < _id:
                     max_base_id = _id
@@ -135,13 +137,13 @@ def bayesian_training_loop(
         mean_training,
         std_training,
         kl_factor,
+        kl_rate,
         num_mc,
         loss_fn,
-        # adjust,
+        adjust,
         batch_size,
         optimizer,
         scheduler,
-        step,
         save_interval,
         model_save_path,
         writer
@@ -155,9 +157,6 @@ def bayesian_training_loop(
         train_loss = 0.
         img_loss = 0.
         kl_loss = 0.
-
-        scheduler_step = 0
-        scheduler_adjust = False
 
         start = time.time()
         for i, (X, target) in enumerate(train_loader):
@@ -219,10 +218,6 @@ def bayesian_training_loop(
 
                 start = time.time()
 
-            if (i + scheduler_step) % step == 0 and i != 0:
-                scheduler.step()
-                scheduler_adjust = True                
-
             # if i % 1000 == 0 and i != 0:
             #     test_loss = 0.
             #     with torch.no_grad(): # evaluate model on test data
@@ -246,9 +241,9 @@ def bayesian_training_loop(
             #         writer.add_scalar('accuracy', accuracy, epoch * train_steps + i)
 
             #         print(f'\nValidation: loss {test_loss / test_steps:.2g} - accuracy {accuracy:.2f}\n')
-  
-        if not scheduler_adjust:
-            scheduler_step += train_steps
+
+        print()
+        scheduler.step()
 
         if epoch % save_interval == 0:
             torch.save(
@@ -257,7 +252,11 @@ def bayesian_training_loop(
             )
 
         if kl_factor < 1:
-            kl_factor *= 5
+            kl_factor *= kl_rate
+        else:
+            kl_factor = 1
+
+        print(f'Adjusting kl factor to {kl_factor:.4g}.')
 
 
 
@@ -269,7 +268,6 @@ def deterministic_training_loop(
         loss_fn,
         optimizer,
         scheduler,
-        step,
         save_interval,
         model_save_path,
         writer
@@ -283,9 +281,6 @@ def deterministic_training_loop(
     for epoch in range(epochs):
         print(f'\nEPOCH {epoch + 1}:')
         train_loss = 0.
-
-        scheduler_step = 0
-        scheduler_adjust = False
 
         start = time.time()
         for i, (X, target) in enumerate(train_loader):
@@ -315,10 +310,6 @@ def deterministic_training_loop(
 
                 start = time.time()
 
-            if (i + scheduler_step) % step == 0 and i != 0:
-                scheduler.step()
-                scheduler_adjust = True                
-
             if i % 1000 == 0 and i != 0:
                 test_loss = 0.
                 with torch.no_grad(): # evaluate model on test data
@@ -333,9 +324,7 @@ def deterministic_training_loop(
                     len_adjust = len(f" |{bar}| {2 * progress}% - ") - 2
                     print(f'Validation:{" " * len_adjust}loss {test_loss / test_steps:.2g}')
 
-  
-        if not scheduler_adjust:
-            scheduler_step += train_steps
+        scheduler.step()
 
         if epoch % save_interval == 0:
             torch.save(model.state_dict(), model_save_path)

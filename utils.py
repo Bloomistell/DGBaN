@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 
 import torch
@@ -14,3 +16,8 @@ def count_params(model):
         S += np.prod(weights_and_biases.size())
 
     return int(S)
+
+
+def save_txt(txt, path):
+    with open(path, 'w') as f:
+        f.write(txt)

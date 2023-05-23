@@ -58,11 +58,12 @@ if __name__ == "__main__" :
 
     parser.add_argument('-o', '--optim_name', type=str, help="Name of the optimizer")
     parser.add_argument('-l', '--loss_name', type=str, help="Name of the loss function")
+    parser.add_argument('-lt', '--loss_type', type=str, help="Type of the loss function")
     parser.add_argument('-kl', '--kl_factor', type=float, help="Factor for kl in the loss function")
+    parser.add_argument('-klr', '--kl_rate', type=float, help="Rare of increase of kl")
     parser.add_argument('-mc', '--num_mc', type=int, help="Number of Monte Carlo runs during training")
     parser.add_argument('-lr', '--lr', type=float, help="Learning rate")
     parser.add_argument('-lrs', '--lr_step', type=float, help="Learning rate step")
-    parser.add_argument('-stp', '--step', type=int, help="Step interval")
     parser.add_argument('--mean_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with the average of several mc")
     parser.add_argument('--std_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with one mc")
 
@@ -97,17 +98,17 @@ if __name__ == "__main__" :
     # Training
     optim_name = args.optim_name                    # 'Adam'
     loss_name = args.loss_name                      # 'nll_loss'
+    loss_type = args.loss_type                      # 'mse_loss'
     kl_factor = args.kl_factor                      # 0.1
+    kl_rate = args.kl_rate                        # 1.1
     num_mc = args.num_mc                            # 10
     lr = args.lr                                    # 1e-2
     lr_step = args.lr_step                          # 0.1
-    step = args.step                                # 9999
     mean_training = args.mean_training              # True
     std_training = args.std_training                # True
     
-    
-    print(
-f"""TRAINING SUMMARY:
+
+    summary = f"""TRAINING SUMMARY:
     Model:
      - model_name (-n): {model_name}
      - random_init (-ri): {random_init}
@@ -134,14 +135,14 @@ f"""TRAINING SUMMARY:
      - optim_name (-o): {optim_name}
      - loss_name (-l): {loss_name}
      - kl_factor (-kl): {kl_factor}
+     - kl_rate (-kl): {kl_rate}
      - num_mc (-mc): {num_mc}
      - lr (-lr): {lr}
      - lr_step (-lrs): {lr_step}
-     - step (-stp): {step}
      - mean_training (--mean_training): {mean_training}
      - std_training (--std_training): {std_training}
 """
-    )
+    print(summary)
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     torch.device(device)
@@ -171,7 +172,7 @@ f"""TRAINING SUMMARY:
     else:
         generator = getattr(deterministic_models, model_name)(data_gen.n_features, N, activation_function)
 
-    max_id, model_save_path, tensorboard_path = get_model_paths(
+    max_id, model_save_path, tensorboard_path, summary_path = get_model_paths(
         model_name,
         activation_function,
         save_path,
@@ -203,7 +204,7 @@ f"""TRAINING SUMMARY:
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=lr_step, verbose=True)
 
     if loss_name in dir(losses):
-        loss_fn = getattr(losses, loss_name)(N=N, device=device, adjust=data_gen.noise_delta)
+        loss_fn = getattr(losses, loss_name)(N=N, device=device, adjust=data_gen.noise_delta.item()[loss_type]['mean'])
     
     elif loss_name in dir(torch.nn.functional):
         loss_fn = getattr(torch.nn.functional, loss_name)
@@ -227,8 +228,9 @@ f"""TRAINING SUMMARY:
 
     writer = SummaryWriter(tensorboard_path)
 
-    print(f'\nModel path: {model_save_path}\n')
+    print(f'\nModel path:\n{model_save_path}\n')
     torch.save(generator.state_dict(), model_save_path)
+    save_txt(summary, summary_path)
 
 
     ### training loop ###
@@ -243,13 +245,13 @@ f"""TRAINING SUMMARY:
             mean_training,
             std_training,
             kl_factor,
+            kl_rate,
             num_mc,
             loss_fn,
-            # adjust,
+            adjust,
             batch_size,
             optimizer,
             scheduler,
-            step,
             save_interval,
             model_save_path,
             writer
@@ -264,7 +266,6 @@ f"""TRAINING SUMMARY:
             loss_fn,
             optimizer,
             scheduler,
-            step,
             save_interval,
             model_save_path,
             writer
