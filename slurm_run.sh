@@ -4,10 +4,10 @@
 #SBATCH --time=20:00:00
 #SBATCH --mem=32GB
 #SBATCH --cpus-per-task=1
-#SBATCH -o /home/J000000000007/DGBaN_project/run1_log.stdout
+#SBATCH -o /home/J000000000007/DGBaN_project/run0_log.stdout
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate DGBaN
@@ -17,17 +17,18 @@ python3 -u training/train_model.py \
  -n DGBaNConv17 \
  --bayesian \
  --no-random_init \
+ --no-fix_weights \
  -a no_activation_function \
  --no-use_base \
  --no-vessel \
- --no-pretrained \
- -id max \
+ --pretrained \
+ -id 30 \
  -s ../save_data \
  -i 1 \
 \
  -t single_random_ring \
  -d 640000 \
- -e 200 \
+ -e 100 \
  -b 512 \
  -f 0.8 \
  --noise \
@@ -38,10 +39,10 @@ python3 -u training/train_model.py \
  -o Adam \
  -l mse_loss \
  -lt mse_loss \
- -kl 1 \
- -klr 1 \
+ -kl 0.00001 \
+ -klr 1.1 \
  -mc 0 \
- -lr 1e-2 \
+ -lr 1e-3 \
  -lrs 0.97 \
  --no-mean_training \
  --std_training \

@@ -6,7 +6,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from bayesian_torch.layers.variational_layers.linear_variational import LinearReparameterization as BayesLinear
-from bayesian_torch.layers.variational_layers.conv_variational import ConvTranspose2dReparameterization as BayesConvTranspose2d
+from bayesian_torch.layers.variational_layers.conv_variational import (
+    ConvTranspose2dReparameterization as BayesConvTranspose2d,
+    Conv2dReparameterization as BayesConv2d
+)
 
 
 
@@ -57,20 +60,44 @@ class LinearNormAct(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        n_layers: int,
+        bias: bool = True,
         act: nn.Module = nn.ReLU,
         **kwargs
     ):
         super(LinearNormAct, self).__init__()
+
+        self.linear = BayesLinear(in_channels, out_channels, bias=bias)
+        self.act = act()
+        
+    def forward(self, x):
+        x, kl = self.linear(x)
+        x = self.act(x)
+        return x, kl
+
+
+class NLinearNormAct(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        n_layers: int,
+        act: nn.Module = nn.ReLU,
+        **kwargs
+    ):
+        super(NLinearNormAct, self).__init__()
 
         self.n_layers = n_layers
 
         factor = (out_channels/in_channels)**(1/n_layers)
 
         self.linear_act = []
-        for i in range(n_layers):
+        for i in range(n_layers-1):
             self.linear_act.append(BayesLinear(int(in_channels * factor**i), int(in_channels * factor**(i+1))))
             self.linear_act.append(act())
+            penultimate = int(in_channels * factor**(i+1))
+            
+        self.linear_act.append(BayesLinear(penultimate, out_channels))
+        self.linear_act.append(act())
         
         self.linear_act = nn.ModuleList(self.linear_act)
 
@@ -96,18 +123,28 @@ class ConvNormAct(nn.Module):
         output_padding: int = 0,
         norm: nn.Module = nn.BatchNorm2d,
         act: nn.Module = nn.ReLU,
+        transpose: bool = True,
         **kwargs
     ):
         super(ConvNormAct, self).__init__()
 
-        self.conv = BayesConvTranspose2d(
-                in_channels,
-                out_channels,
-                kernel_size=kernel_size,
-                stride=stride,
-                padding=padding,
-                output_padding=output_padding
-            )
+        if transpose:
+            self.conv = BayesConvTranspose2d(
+                    in_channels,
+                    out_channels,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
+                    output_padding=output_padding
+                )
+        else:
+            self.conv = BayesConv2d(
+                    in_channels,
+                    out_channels,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding
+                )
         self.norm_act = nn.Sequential(norm(out_channels), act())
 
     def forward(self, x):

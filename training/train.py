@@ -130,6 +130,13 @@ def load_vessel_base(activation_function, pretrain_id, model, save_path):
 
 
 
+def fix_model_weights(model):
+    for name, param in model.named_parameters():
+        if 'weight' in name:
+            param.requires_grad = False
+
+
+
 def bayesian_training_loop(
         model,
         train_loader,

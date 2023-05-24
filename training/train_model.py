@@ -20,14 +20,7 @@ from DGBaN import (
     deterministic_models
 )
 import DGBaN.training.losses as losses
-from DGBaN.training.train import (
-    bayesian_training_loop,
-    deterministic_training_loop,
-    get_model_paths,
-    load_pretrained,
-    load_base,
-    load_vessel_base
-)
+from DGBaN.training.train import *
 from DGBaN.utils import *
 
 
@@ -38,6 +31,7 @@ if __name__ == "__main__" :
     parser.add_argument('-n', '--model_name', type=str, help="Name of the model")
     parser.add_argument('--bayesian', type=bool, action=argparse.BooleanOptionalAction, help="Whether the model is bayesian or not")
     parser.add_argument('--random_init', type=bool, action=argparse.BooleanOptionalAction, help="Initializing the gaussian's parameters at random")
+    parser.add_argument('--fix_weights', type=bool, action=argparse.BooleanOptionalAction, help="Fixes the weights of the model")
     parser.add_argument('-a', '--activation_function', type=str, help="Activation function")
     parser.add_argument('--use_base', type=bool, action=argparse.BooleanOptionalAction, help="Using a deterministic base model for the deterministic layers")
     parser.add_argument('--vessel', type=bool, action=argparse.BooleanOptionalAction, help="Set only the weights of a bayesian model according to a base model")
@@ -76,6 +70,7 @@ if __name__ == "__main__" :
     model_name = args.model_name                    # 'DGBaNR'
     bayesian = args.bayesian                        # True
     random_init = args.random_init                  # False
+    fix_weights = args.fix_weights                  # False
     activation_function = args.activation_function  # 'sigmoid'
     use_base = args.use_base                        # False
     vessel = args.vessel                            # False
@@ -111,7 +106,9 @@ if __name__ == "__main__" :
     summary = f"""TRAINING SUMMARY:
     Model:
      - model_name (-n): {model_name}
+     - bayesian (--bayesian): {bayesian}
      - random_init (-ri): {random_init}
+     - fix_weights (--fix_weights): {fix_weights}
      - activation_function (-a): {activation_function}
      - use_base (--use_base): {use_base}
      - vessel (--vessel): {vessel}
@@ -197,6 +194,9 @@ if __name__ == "__main__" :
         
     elif vessel:
         load_vessel_base(activation_function, pretrained_id, generator, save_path)
+
+    if fix_weights:
+        fix_model_weights(generator)
 
 
     ### set optimizer and loss ###

@@ -500,11 +500,13 @@ class single_random_ring():
             noise_tag = ''
 
         features_path = f'{self.save_path}/{self.__class__.__name__}/features_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        true_imgs_path = f'{self.save_path}/{self.__class__.__name__}/true_images_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
         imgs_path = f'{self.save_path}/{self.__class__.__name__}/images_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
         noise_delta_path = f'{self.save_path}/{self.__class__.__name__}/noise_delta_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
         
         if os.path.exists(features_path):
             self.features = np.load(features_path)
+            self.imgs_1 = np.load(true_imgs_path)
             self.imgs = np.load(imgs_path)
             self.noise_delta = np.load(noise_delta_path, allow_pickle=True)
 
@@ -556,6 +558,7 @@ class single_random_ring():
                 
             if not test_return:
                 np.save(features_path, self.features)
+                np.save(true_imgs_path, self.imgs_1)
                 np.save(imgs_path, self.imgs)
                 
                 self.noise_delta = np.array(self.noise_delta)
@@ -581,6 +584,12 @@ class single_random_ring():
         else:
             return DataLoader(train_dataset, batch_size=batch_size), DataLoader(test_dataset, batch_size=batch_size)
 
+    def generate_pixel_dataset(self, data_size=10_000, batch_size=64, sigma=0.3, features_degree=1, seed=42, device='cpu', test_return=False):
+        self.generate_dataset(data_size=data_size, noise=True, sigma=sigma, features_degree=features_degree, seed=seed, device=device, test_return=False)
+
+        self.features
+
+
     def gaussian_rings(self, data_size, center, mean, sig, theta, phi):
         centered = self.img_coor[np.newaxis, :, :] - center[:, np.newaxis, :]
         radius = np.linalg.norm(centered, axis=2)
@@ -588,7 +597,7 @@ class single_random_ring():
         angle = np.arccos(centered[:, :, 0] / (np.sqrt(centered[:, :, 1]**2 + centered[:, :, 0]**2) + 1e-6)) * np.sign(centered[:, :, 1] + 1e-6)
         radius += np.cos(angle - theta[:, np.newaxis]) * radius * phi[:, np.newaxis]
 
-        return np.exp(-(radius - mean[:, np.newaxis])**2 / sig[:, np.newaxis]**2)
+        return np.exp(-(radius - mean[:, np.newaxis])**2 / sig[:, np.newaxis]**2) / 2
 
     def random_sample(self, n_samples: int):
         data_size = len(self.features)
@@ -607,5 +616,5 @@ class single_random_ring():
         angle = np.arccos(centered[:, 0] / (np.sqrt(centered[:, 1]**2 + centered[:, 0]**2) + 1e-6)) * np.sign(centered[:, 1] + 1e-6)
         radius += np.cos(angle - theta) * radius * phi
         
-        return np.exp(-(radius - mean)**2 / sig**2).reshape((self.N, self.N))
+        return np.exp(-(radius - mean)**2 / sig**2).reshape((self.N, self.N)) / 2
 

@@ -3,7 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from bayesian_torch.layers.variational_layers.linear_variational import LinearReparameterization as BayesLinear
-from bayesian_torch.layers.variational_layers.conv_variational import ConvTranspose2dReparameterization as BayesConvTranspose2d
+from bayesian_torch.layers.variational_layers.conv_variational import (
+    ConvTranspose2dReparameterization as BayesConvTranspose2d,
+    Conv2dReparameterization as BayesConv2d
+)
 
 import models.bayesian_blocks as blocks
 
@@ -1247,7 +1250,7 @@ class DGBaNConv17(torch.nn.Module):
     def __init__(self, *args, **kwargs):
         super(DGBaNConv17, self).__init__()
 
-        self.linear_layers = blocks.LinearNormAct(28, 1024, 5)
+        self.linear_layers = blocks.NLinearNormAct(28, 1024, 5)
 
         self.conv_layers = blocks.BayesSequential(
             blocks.BottleNeck(256, 256),
@@ -1286,6 +1289,209 @@ class DGBaNConv17(torch.nn.Module):
         kl_sum += kl
 
         x = x.view(x.size(0), 256, 2, 2)
+
+        x, kl = self.conv_layers(x)
+        kl_sum += kl
+        
+        return x.squeeze(dim=1), kl_sum
+    
+
+
+class DGBaNLinear22(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(DGBaNLinear22, self).__init__()
+
+        self.linear_layers = blocks.BayesSequential(
+            blocks.NLinearNormAct(28, 1024, 5),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.LinearNormAct(1024, 256, bias=False),
+                    blocks.LinearNormAct(256, 256),
+                    blocks.LinearNormAct(256, 1024, bias=False),
+                )
+            ),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.LinearNormAct(1024, 1024),
+                    blocks.LinearNormAct(1024, 1024)
+                )
+            ),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.LinearNormAct(1024, 1024),
+                    blocks.LinearNormAct(1024, 1024)
+                )
+            ),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.LinearNormAct(1024, 1024),
+                    blocks.LinearNormAct(1024, 1024)
+                )
+            ),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.LinearNormAct(1024, 1024),
+                    blocks.LinearNormAct(1024, 1024)
+                )
+            ),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.LinearNormAct(1024, 1024),
+                    blocks.LinearNormAct(1024, 1024)
+                )
+            ),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.LinearNormAct(1024, 1024),
+                    blocks.LinearNormAct(1024, 1024)
+                )
+            ),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.LinearNormAct(1024, 1024),
+                    blocks.LinearNormAct(1024, 1024)
+                )
+            )
+        )
+
+    def forward(self, x):
+        x, kl = self.linear_layers(x)
+        x = x.view(x.size(0), 32, 32)
+        
+        return x, kl
+
+
+
+class OnePixel(nn.Module):
+    def __init__(self, input_size):
+        super(OnePixel, self).__init__()
+        
+        self.linear_layers = blocks.NLinearNormAct(input_size, 1, 5)
+        
+    def forward(self, x):
+        x, kl = self.linear_layers        
+        
+        return x, kl
+
+
+
+class DGBaN1024(nn.Module):
+    def __init__(self):
+        super(DGBaN1024, self).__init__()
+        self.pixels = nn.ModuleList([OnePixel() for _ in range(1024)])
+
+    def forward(self, x):
+        x = torch.stack([self.pixels[i](x[i]) for i in range(1024)])
+
+        return x.view(x.size(0), 32, 32)
+
+
+
+class DGBaNConv25(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(DGBaNConv25, self).__init__()
+
+        self.linear_layers = blocks.NLinearNormAct(28, 1024, 5)
+
+        self.conv_layers = blocks.BayesSequential(
+            blocks.BottleNeck(256, 256),
+            blocks.Conv2x3x3NormAct(256, 256),
+            blocks.Conv2x3x3NormAct(256, 128, shortcut=blocks.Conv1x1BnReLU(256, 128)),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.ScaleUp(128, 128, 2, 0, 1),
+                    blocks.Conv3x3BnReLU(128, 128)
+                ),
+                blocks.ConvNormAct(128, 128, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(128, 128),
+            blocks.Conv2x3x3NormAct(128, 64, shortcut=blocks.Conv1x1BnReLU(128, 64)),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.ScaleUp(64, 64, 2, 0, 1),
+                    blocks.Conv3x3BnReLU(64, 64)
+                ),
+                blocks.ConvNormAct(64, 64, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(64, 64),
+            blocks.Conv2x3x3NormAct(64, 32, shortcut=blocks.Conv1x1BnReLU(64, 32)),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.ScaleUp(32, 32, 2, 0, 1),
+                    blocks.Conv3x3BnReLU(32, 32)
+                ),
+                blocks.ConvNormAct(32, 32, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(32, 32),
+            blocks.Conv2x3x3NormAct(32, 16, shortcut=blocks.Conv1x1BnReLU(32, 16)),
+            blocks.LastConv(16, 5, 2, 2, 1)
+        )
+
+    def forward(self, x):
+        kl_sum = 0
+
+        x, kl = self.linear_layers(x)
+        kl_sum += kl
+
+        x = x.view(x.size(0), 256, 2, 2)
+
+        x, kl = self.conv_layers(x)
+        kl_sum += kl
+        
+        return x.squeeze(dim=1), kl_sum
+    
+
+class DGBaNConv33(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(DGBaNConv33, self).__init__()
+
+        self.linear_layers = blocks.NLinearNormAct(28, 2048, 6)
+
+        self.conv_layers = blocks.BayesSequential(
+            blocks.BottleNeck(512, 512),
+            blocks.Conv2x3x3NormAct(512, 512),
+            blocks.Conv2x3x3NormAct(512, 512),
+            blocks.Conv2x3x3NormAct(512, 256, shortcut=blocks.Conv1x1BnReLU(512, 256)),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.ScaleUp(256, 256, 2, 0, 1),
+                    blocks.Conv3x3BnReLU(256, 256)
+                ),
+                blocks.ConvNormAct(256, 256, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(256, 256),
+            blocks.Conv2x3x3NormAct(256, 256),
+            blocks.Conv2x3x3NormAct(256, 128, shortcut=blocks.Conv1x1BnReLU(256, 128)),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.ScaleUp(128, 128, 2, 0, 1),
+                    blocks.Conv3x3BnReLU(128, 128)
+                ),
+                blocks.ConvNormAct(128, 128, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(128, 128),
+            blocks.Conv2x3x3NormAct(128, 128),
+            blocks.Conv2x3x3NormAct(128, 64, shortcut=blocks.Conv1x1BnReLU(128, 64)),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.ScaleUp(64, 64, 2, 0, 1),
+                    blocks.Conv3x3BnReLU(64, 64)
+                ),
+                blocks.ConvNormAct(64, 64, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(64, 64),
+            blocks.Conv2x3x3NormAct(64, 64),
+            blocks.Conv2x3x3NormAct(64, 32, shortcut=blocks.Conv1x1BnReLU(64, 32)),
+            blocks.LastConv(32, 5, 2, 2, 1)
+        )
+
+    def forward(self, x):
+        kl_sum = 0
+
+        x, kl = self.linear_layers(x)
+        kl_sum += kl
+
+        x = x.view(x.size(0), 512, 2, 2)
 
         x, kl = self.conv_layers(x)
         kl_sum += kl
