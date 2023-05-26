@@ -137,133 +137,189 @@ def fix_model_weights(model):
 
 
 
-def bayesian_training_loop(
+class bayesian_training():
+    def __init__(
+        self,
         model,
-        train_loader,
-        epochs,
         mean_training,
         std_training,
+        n_batch,
         kl_factor,
-        kl_rate,
         num_mc,
         loss_fn,
-        adjust,
         batch_size,
-        optimizer,
-        scheduler,
-        save_interval,
-        model_save_path,
-        writer
+        optimizer
     ):
+        self.model = model
+        self.n_batch = n_batch
+        self.kl_factor = kl_factor
+        self.img_factor = 1
+        self.loss_fn = loss_fn
+        self.optimizer = optimizer
 
-    train_steps = len(train_loader)
-    print_step = train_steps / 50
-
-    for epoch in range(epochs):
-        print(f'\nEPOCH {epoch + 1}:')
-        train_loss = 0.
-        img_loss = 0.
-        kl_loss = 0.
-
-        start = time.time()
-        for i, (X, target) in enumerate(train_loader):
-            if mean_training:
-                optimizer.zero_grad()
+        if mean_training:
+            def inner_training(i, X, target):
+                self.optimizer.zero_grad()
 
                 preds = []
                 kls = []
                 for _ in range(num_mc): # extract several samples from the model
-                    pred, kl = model(X)
+                    pred, kl = self.model(X)
                     preds.append(pred)
                     kls.append(kl)
 
                 pred = torch.mean(torch.stack(preds), dim=0)
                 kl = torch.mean(torch.stack(kls), dim=0)
 
-                img = loss_fn(pred, target)
-                loss = img + (kl / batch_size) * kl_factor
+                img = self.loss_fn(pred, target)
+                loss = img * self.img_factor + (kl / batch_size) * self.kl_factor
 
-                train_loss += loss.item()
-                img_loss += img.item()
-                kl_loss += (kl / batch_size).item()
-
-                loss.backward()
-                optimizer.step()
-
-            if std_training:
-                optimizer.zero_grad()
-
-                pred, kl = model(X)
-
-                img = loss_fn(pred, target)
-                loss = img + (kl / batch_size) * kl_factor
-
-                train_loss += loss.item()
-                img_loss += img.item()
-                kl_loss += (kl / batch_size).item()
+                self.train_loss += loss.item()
+                self.self.img_loss += img.item()
+                self.kl_loss += (kl / batch_size).item()
 
                 loss.backward()
-                optimizer.step()
+                self.optimizer.step()
 
-            if i % print_step == 0 and i != 0:
-                # img_factor, kl_factor = kl_factor, img_factor
-                end = time.time()
-                
-                batch_speed = print_step / (end - start)
-                progress = int((i / train_steps) * 50)
-                bar = "\u2588" * progress + '-' * (50 - progress)
-                
-                print(f'Training: |{bar}| {2 * progress}% - loss {train_loss / print_step:.2g} - img {img_loss / print_step:.2g} - kl {kl_loss / print_step:.2g} - speed {batch_speed:.2f} batch/s')
-                
-                writer.add_scalar('training loss', train_loss / print_step, epoch * train_steps + i)
-                writer.add_scalar('img loss', img_loss / print_step, epoch * train_steps + i)
-                writer.add_scalar('kl loss', kl_loss / print_step, epoch * train_steps + i)
+        elif std_training:
+            def inner_training(i, X, target):
+                self.optimizer.zero_grad()
 
-                train_loss = 0.
-                img_loss = 0.
-                kl_loss = 0.
+                pred, kl = self.model(X)
 
-                start = time.time()
+                img = self.loss_fn(pred, target)
+                loss = img * self.img_factor + (kl / batch_size) * self.kl_factor
 
-            # if i % 1000 == 0 and i != 0:
-            #     test_loss = 0.
-            #     with torch.no_grad(): # evaluate model on test data
-            #         for i, (X, target) in enumerate(test_loader):
-            #             pred, kl = model(X)
+                self.train_loss += loss.item()
+                self.img_loss += img.item()
+                self.kl_loss += (kl / batch_size).item()
 
-            #             loss = loss_fn(pred, target) + (kl / batch_size)
-            #             test_loss += loss.item()
+                loss.backward()
+                self.optimizer.step()
 
-            #         writer.add_scalar('testing loss', test_loss / test_steps, epoch * train_steps + i)
-
-            #         # getting the predictions for the base features
-            #         pred_rings = np.zeros((n_samples, 32, 32))
-            #         for i, feature in enumerate(features):
-            #             pred_rings[i] += model(feature)[0].cpu().numpy().squeeze()
-
-            #         pred_ring = pred_rings.sum(axis=0)
-            #         pred_ring /= pred_ring.max()
-            #         accuracy = 1 - ((true_ring - pred_ring)**2).mean()
-
-            #         writer.add_scalar('accuracy', accuracy, epoch * train_steps + i)
-
-            #         print(f'\nValidation: loss {test_loss / test_steps:.2g} - accuracy {accuracy:.2f}\n')
-
-        print()
-        scheduler.step()
-
-        if epoch % save_interval == 0:
-            torch.save(
-                model.state_dict(),
-                model_save_path
-            )
-
-        if kl_factor < 1:
-            kl_factor *= kl_rate
         else:
-            kl_factor = 1
+            def inner_training(i, X, target):
+                pred, kl = self.model(X)
 
-        print(f'Adjusting kl factor to {kl_factor:.4g}.')
+                img = self.loss_fn(pred, target)
+                loss = img * self.img_factor + (kl / batch_size) * self.kl_factor
+
+                self.train_loss += loss.item()
+                self.img_loss += img.item()
+                self.kl_loss += (kl / batch_size).item()
+                
+                loss.backward()
+
+                if (i+1) % self.n_batch == 0:
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
+
+        self.inner_training = inner_training
+
+
+    def train(
+        self,
+        train_loader,
+        epochs,
+        batch_mean_training,
+        kl_rate,
+        adjust,
+        scheduler,
+        save_interval,
+        model_save_path,
+        writer
+    ):
+        train_steps = len(train_loader)
+        print_step = train_steps / 50
+
+        img_factor = 1
+
+        for epoch in range(epochs):
+            print(f'\nEPOCH {epoch + 1}:')
+            self.train_loss = 0.
+            self.img_loss = 0.
+            self.kl_loss = 0.
+
+            total_img_loss = 0.
+            count = 0
+
+            start = time.time()
+            self.optimizer.zero_grad()
+            for i, (X, target) in enumerate(train_loader):
+                self.inner_training(i, X, target)
+
+                if i % print_step == 0 and i != 0:
+                    end = time.time()
+                    
+                    batch_speed = print_step / (end - start)
+                    progress = int((i / train_steps) * 50)
+                    bar = "\u2588" * progress + '-' * (50 - progress)
+                    
+                    print(f'Training: |{bar}| {2 * progress}% - loss {self.train_loss / print_step:.2g} - img {self.img_loss / print_step:.2g} - kl {self.kl_loss / print_step:.2g} - speed {batch_speed:.2f} batch/s')
+                    
+                    writer.add_scalar('training loss', self.train_loss / print_step, epoch * train_steps + i)
+                    writer.add_scalar('img loss', self.img_loss / print_step, epoch * train_steps + i)
+                    writer.add_scalar('kl loss', self.kl_loss / print_step, epoch * train_steps + i)
+
+                    total_img_loss += self.img_loss / print_step
+                    count += 1
+
+                    self.train_loss = 0.
+                    self.img_loss = 0.
+                    self.kl_loss = 0.
+
+                    start = time.time()
+
+                # if i % 1000 == 0 and i != 0:
+                #     test_loss = 0.
+                #     with torch.no_grad(): # evaluate model on test data
+                #         for i, (X, target) in enumerate(test_loader):
+                #             pred, kl = model(X)
+
+                #             loss = loss_fn(pred, target) + (kl / batch_size)
+                #             test_loss += loss.item()
+
+                #         writer.add_scalar('testing loss', test_loss / test_steps, epoch * train_steps + i)
+
+                #         # getting the predictions for the base features
+                #         pred_rings = np.zeros((n_samples, 32, 32))
+                #         for i, feature in enumerate(features):
+                #             pred_rings[i] += model(feature)[0].cpu().numpy().squeeze()
+
+                #         pred_ring = pred_rings.sum(axis=0)
+                #         pred_ring /= pred_ring.max()
+                #         accuracy = 1 - ((true_ring - pred_ring)**2).mean()
+
+                #         writer.add_scalar('accuracy', accuracy, epoch * train_steps + i)
+
+                #         print(f'\nValidation: loss {test_loss / test_steps:.2g} - accuracy {accuracy:.2f}\n')
+
+            if i % self.n_batch != 0 and batch_mean_training:  # Catch the case where the last mini-batch in the epoch is smaller than n_batch
+                self.optimizer.step()
+                self.optimizer.zero_grad()
+
+            if total_img_loss / count > adjust * 1.1:
+                self.kl_factor = min(self.img_factor, self.kl_factor)
+                self.img_factor = 1
+            else:
+                self.img_factor = min(self.img_factor, self.kl_factor)
+                self.kl_factor = 1
+
+            print()
+            scheduler.step()
+
+            if epoch % save_interval == 0:
+                torch.save(
+                    self.model.state_dict(),
+                    model_save_path
+                )
+
+            if self.kl_factor < 1:
+                self.kl_factor *= kl_rate
+            else:
+                self.kl_factor = 1
+
+            print(f'Adjusting kl factor to {self.kl_factor:.4g}.')
 
 
 

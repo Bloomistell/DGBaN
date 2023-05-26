@@ -60,6 +60,8 @@ if __name__ == "__main__" :
     parser.add_argument('-lrs', '--lr_step', type=float, help="Learning rate step")
     parser.add_argument('--mean_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with the average of several mc")
     parser.add_argument('--std_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with one mc")
+    parser.add_argument('--batch_mean_training', type=bool, action=argparse.BooleanOptionalAction, help="Predict on several batches before optimizing")
+    parser.add_argument('-nb', '--n_batch', type=int, help="Number of batches to predict on for the batch mean training")
 
     args = parser.parse_args()
 
@@ -95,12 +97,14 @@ if __name__ == "__main__" :
     loss_name = args.loss_name                      # 'nll_loss'
     loss_type = args.loss_type                      # 'mse_loss'
     kl_factor = args.kl_factor                      # 0.1
-    kl_rate = args.kl_rate                        # 1.1
+    kl_rate = args.kl_rate                          # 1.1
     num_mc = args.num_mc                            # 10
     lr = args.lr                                    # 1e-2
     lr_step = args.lr_step                          # 0.1
     mean_training = args.mean_training              # True
     std_training = args.std_training                # True
+    batch_mean_training = args.batch_mean_training  # True
+    n_batch = args.n_batch                          # True
     
 
     summary = f"""TRAINING SUMMARY:
@@ -131,6 +135,7 @@ if __name__ == "__main__" :
     Training:
      - optim_name (-o): {optim_name}
      - loss_name (-l): {loss_name}
+     - loss_type (-l): {loss_type}
      - kl_factor (-kl): {kl_factor}
      - kl_rate (-kl): {kl_rate}
      - num_mc (-mc): {num_mc}
@@ -138,6 +143,8 @@ if __name__ == "__main__" :
      - lr_step (-lrs): {lr_step}
      - mean_training (--mean_training): {mean_training}
      - std_training (--std_training): {std_training}
+     - batch_mean_training (--batch_mean_training): {batch_mean_training}
+     - n_batch (-nb): {n_batch}
 """
     print(summary)
 
@@ -158,7 +165,7 @@ if __name__ == "__main__" :
         device=device
     )
 
-    adjust = data_gen.noise_delta
+    adjust = data_gen.noise_delta.item()[loss_type]['mean']
 
 
     ### load model ###
@@ -204,7 +211,7 @@ if __name__ == "__main__" :
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=lr_step, verbose=True)
 
     if loss_name in dir(losses):
-        loss_fn = getattr(losses, loss_name)(N=N, device=device, adjust=data_gen.noise_delta.item()[loss_type]['mean'])
+        loss_fn = getattr(losses, loss_name)(N=N, device=device, adjust=adjust)
     
     elif loss_name in dir(torch.nn.functional):
         loss_fn = getattr(torch.nn.functional, loss_name)
@@ -238,19 +245,23 @@ if __name__ == "__main__" :
     generator.train()
 
     if bayesian:
-        bayesian_training_loop(
+        bayesian_train = bayesian_training(
             generator,
-            train_loader,
-            epochs,
             mean_training,
             std_training,
+            n_batch,
             kl_factor,
-            kl_rate,
             num_mc,
             loss_fn,
-            adjust,
             batch_size,
-            optimizer,
+            optimizer
+        )
+        bayesian_train.train(
+            train_loader,
+            epochs,
+            batch_mean_training,
+            kl_rate,
+            adjust,
             scheduler,
             save_interval,
             model_save_path,
