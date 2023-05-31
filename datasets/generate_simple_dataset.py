@@ -11,7 +11,7 @@ from sklearn.preprocessing import PolynomialFeatures
 
 
 
-class ring():
+class Ring():
     def __init__(self, N, save_path, inner_scale=0.1, outer_scale=0.45, ring_resolution=1, train_fraction=0.8):
         self.N = N
         self.train_fraction = train_fraction
@@ -76,7 +76,7 @@ class ring():
 
 
 
-class random_ring():
+class RandomRing():
     def __init__(self, N, save_path, train_fraction=0.8):
         self.N = N
         self.N2 = N**2
@@ -225,7 +225,7 @@ class random_ring():
 
 
 
-class pattern_random_ring():
+class PatternRandomRing():
     def __init__(self, N, save_path='../save_data', train_fraction=0.8):
         self.N = N
         self.N2 = N**2
@@ -337,7 +337,7 @@ class pattern_random_ring():
 
 
 
-class multi_random_ring():
+class MultiRandomRing():
     def __init__(self, N, save_path='../save_data', train_fraction=0.8):
         self.N = N
         self.N2 = N**2
@@ -474,7 +474,7 @@ class multi_random_ring():
 
 
 
-class single_random_ring():
+class SingleRandomRing():
     def __init__(self, N, save_path='../save_data', train_fraction=0.8):
         self.N = N
         self.N2 = N**2
@@ -484,18 +484,25 @@ class single_random_ring():
         if not os.path.exists(f'{self.save_path}/{self.__class__.__name__}/'):
             os.mkdir(f'{self.save_path}/{self.__class__.__name__}/')
 
-        self.centers = np.array([(i, j) for i in range(8, N-8) for j in range(8, N-8)])
-        self.means = np.arange(6, 9, 0.03)
-        self.sigs = np.arange(0.8, 1.6, 0.01)
-        self.thetas = np.arange(0, 2 * np.pi, np.pi / 80)
-        self.phis = np.arange(0, 0.5, 0.005)
+        self.centers = torch.Tensor([(i, j) for i in range(8, N-8) for j in range(8, N-8)])
 
-        self.img_coor = np.array([(i, j) for i in range(self.N) for j in range(self.N)])
+        self.img_coor = torch.Tensor([(i, j) for i in range(self.N) for j in range(self.N)])
         self.n_features = 6
 
     def generate_dataset(self, data_size=10_000, batch_size=64, noise=True, sigma=0.3, features_degree=1, seed=42, device='cpu', test_return=False):
         if noise:
             noise_tag = f'noise_{sigma}_'
+            # val = np.arange(0, 2, 0.01)
+            # distr = np.exp(-(val - 1)**2 / sigma**2)
+            # self.kernel = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)]) # adds gaussian noise
+            # self.kernel_bis = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)])
+
+            torch.manual_seed(seed)
+            mean = torch.full((data_size, self.N2), 1.)
+            std = torch.full((data_size, self.N2), sigma)
+            self.kernel = torch.normal(mean, std)
+            self.kernel_bis = torch.normal(mean, std)
+
         else:
             noise_tag = ''
 
@@ -505,24 +512,21 @@ class single_random_ring():
         noise_delta_path = f'{self.save_path}/{self.__class__.__name__}/noise_delta_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
         
         if os.path.exists(features_path):
-            self.features = np.load(features_path)
-            self.imgs_1 = np.load(true_imgs_path)
-            self.imgs = np.load(imgs_path)
-            self.noise_delta = np.load(noise_delta_path, allow_pickle=True)
+            self.features = torch.load(features_path)
+            # self.imgs_1 = torch.load(true_imgs_path)
+            self.imgs = torch.load(imgs_path)
+            self.noise_delta = torch.load(noise_delta_path)
 
         else:
-            np.random.seed(seed)
-
             # first particle
-            center_1 = self.centers[np.random.choice(16**2, size=data_size)]
-            center_x_1 = center_1[:, 0]
-            center_y_1 = center_1[:, 1]
-            mean_1 = np.random.choice(self.means, size=data_size)
-            sig_1 = np.random.choice(self.sigs, size=data_size)
-            theta_1 = np.random.choice(self.thetas, size=data_size)
-            phi_1 = np.random.choice(self.phis, size=data_size)
+            center_x_1 = torch.randint(8, 16, (data_size,))
+            center_y_1 = torch.randint(8, 16, (data_size,))
+            mean_1 = torch.rand((data_size,)) * 3 + 6
+            sig_1 = torch.rand((data_size,)) * 0.8 + 0.8
+            theta_1 = torch.zeros((data_size,)) * 2 * np.pi
+            phi_1 = torch.zeros((data_size,)) * 0.5
             
-            self.features = np.concatenate([
+            self.features = torch.concat([
                 center_x_1.reshape(-1, 1),
                 center_y_1.reshape(-1, 1),
                 mean_1.reshape(-1, 1),
@@ -531,25 +535,21 @@ class single_random_ring():
                 phi_1.reshape(-1, 1)
             ], axis=1)
 
+            center_1 = torch.concat([center_x_1.reshape(-1, 1), center_y_1.reshape(-1, 1)], dim=1)
             self.imgs_1 = self.gaussian_rings(data_size, center_1, mean_1, sig_1, theta_1, phi_1)
 
             self.noise_delta = {'mse_loss':{'mean':0., 'std':0.}, 'l1_loss':{'mean':0., 'std':0.}}
             if noise:
-                val = np.arange(0, 2, 0.01)
-                distr = np.exp(-(val - 1)**2 / sigma**2)
-                kernel = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)]) # adds gaussian noise
-                self.imgs = (self.imgs_1 * kernel)
+                self.imgs = (self.imgs_1 * self.kernel)
+                self.imgs_bis = (self.imgs_1 * self.kernel_bis)
 
-                kernel_bis = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)])
-                self.imgs_bis = (self.imgs_1 * kernel_bis)
+                self.noise_delta['l1_loss']['mean'] = torch.abs(self.imgs - self.imgs_bis).mean(dim=1)
+                self.noise_delta['l1_loss']['std'] = self.noise_delta['l1_loss']['mean'].std().item()
+                self.noise_delta['l1_loss']['mean'] = self.noise_delta['l1_loss']['mean'].mean().item()
 
-                self.noise_delta['l1_loss']['mean'] = np.abs(self.imgs - self.imgs_bis).mean(axis=1)
-                self.noise_delta['l1_loss']['std'] = self.noise_delta['l1_loss']['mean'].std()
-                self.noise_delta['l1_loss']['mean'] = self.noise_delta['l1_loss']['mean'].mean()
-
-                self.noise_delta['mse_loss']['mean'] = ((self.imgs - self.imgs_bis)**2).mean(axis=1)
-                self.noise_delta['mse_loss']['std'] = self.noise_delta['mse_loss']['mean'].std()
-                self.noise_delta['mse_loss']['mean'] = self.noise_delta['mse_loss']['mean'].mean()
+                self.noise_delta['mse_loss']['mean'] = ((self.imgs - self.imgs_bis)**2).mean(dim=1)
+                self.noise_delta['mse_loss']['std'] = self.noise_delta['mse_loss']['mean'].std().item()
+                self.noise_delta['mse_loss']['mean'] = self.noise_delta['mse_loss']['mean'].mean().item()
 
                 self.imgs = self.imgs.reshape((data_size, self.N, self.N))
 
@@ -557,12 +557,10 @@ class single_random_ring():
                 self.imgs = self.imgs_1.reshape((data_size, self.N, self.N))
                 
             if not test_return:
-                np.save(features_path, self.features)
-                np.save(true_imgs_path, self.imgs_1)
-                np.save(imgs_path, self.imgs)
-                
-                self.noise_delta = np.array(self.noise_delta)
-                np.save(noise_delta_path, self.noise_delta, allow_pickle=True)
+                torch.save(self.features, features_path)
+                # torch.save(self.imgs_1, true_imgs_path)
+                torch.save(self.imgs, imgs_path)
+                torch.save(self.noise_delta, noise_delta_path)
 
         self.poly = PolynomialFeatures(degree=features_degree)
         transformed_features = self.poly.fit_transform(self.features)
@@ -572,11 +570,11 @@ class single_random_ring():
 
         train_dataset = TensorDataset(
             torch.tensor(self.transformed_features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
-            torch.tensor(self.imgs[:int(self.train_fraction * data_size)], dtype=torch.float, device=device)
+            self.imgs[:int(self.train_fraction * data_size)].to(device)
         )
         test_dataset = TensorDataset(
             torch.tensor(self.transformed_features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
-            torch.tensor(self.imgs[int(self.train_fraction * data_size):], dtype=torch.float, device=device)
+            self.imgs[int(self.train_fraction * data_size):].to(device)
         )
         
         if test_return:
@@ -589,32 +587,314 @@ class single_random_ring():
 
         self.features
 
-
     def gaussian_rings(self, data_size, center, mean, sig, theta, phi):
-        centered = self.img_coor[np.newaxis, :, :] - center[:, np.newaxis, :]
-        radius = np.linalg.norm(centered, axis=2)
+        centered = self.img_coor[None, :, :] - center[:, None, :]
+        radius = torch.linalg.norm(centered, dim=2)
 
-        angle = np.arccos(centered[:, :, 0] / (np.sqrt(centered[:, :, 1]**2 + centered[:, :, 0]**2) + 1e-6)) * np.sign(centered[:, :, 1] + 1e-6)
-        radius += np.cos(angle - theta[:, np.newaxis]) * radius * phi[:, np.newaxis]
+        angle = torch.acos(centered[:, :, 0] / (torch.sqrt(centered[:, :, 1]**2 + centered[:, :, 0]**2) + 1e-6)) * torch.sign(centered[:, :, 1] + 1e-6)
+        radius += torch.cos(angle - theta[:, None]) * radius * phi[:, None]
 
-        return np.exp(-(radius - mean[:, np.newaxis])**2 / sig[:, np.newaxis]**2) / 2
+        return torch.exp(-(radius - mean[:, None])**2 / sig[:, None]**2) / 2
 
     def random_sample(self, n_samples: int):
         data_size = len(self.features)
-        idx = np.random.choice(data_size, size=n_samples)
+        idx = torch.randint(0, data_size, (n_samples,))
 
         features = self.features[idx]
         transformed_features = self.scaler.transform(self.poly.transform(features))
         imgs = self.imgs[idx]
 
-        return features, transformed_features, imgs
+        return features.numpy(), transformed_features, imgs.numpy()
 
     def ring_from_features(self, center_x, center_y, mean, sig, theta, phi):
-        centered = self.img_coor - (center_x, center_y)
-        radius = np.linalg.norm(centered, axis=1)
+        centered = self.img_coor - torch.tensor([center_x, center_y])
+        radius = torch.linalg.norm(centered, dim=1)
 
-        angle = np.arccos(centered[:, 0] / (np.sqrt(centered[:, 1]**2 + centered[:, 0]**2) + 1e-6)) * np.sign(centered[:, 1] + 1e-6)
-        radius += np.cos(angle - theta) * radius * phi
+        angle = torch.acos(centered[:, 0] / (torch.sqrt(centered[:, 1]**2 + centered[:, 0]**2) + 1e-6)) * torch.sign(centered[:, 1] + 1e-6)
+        radius += torch.cos(angle - theta) * radius * phi
         
-        return np.exp(-(radius - mean)**2 / sig**2).reshape((self.N, self.N)) / 2
+        return torch.exp(-(radius - mean)**2 / sig**2).reshape((self.N, self.N)) / 2
+
+
+
+class NoiseRing():
+    def __init__(self, N, save_path='../save_data', train_fraction=0.8):
+        self.N = N
+        self.N2 = N**2
+        self.save_path = save_path
+        self.train_fraction = train_fraction
+
+        if not os.path.exists(f'{self.save_path}/{self.__class__.__name__}/'):
+            os.mkdir(f'{self.save_path}/{self.__class__.__name__}/')
+
+        self.centers = torch.Tensor([(i, j) for i in range(8, N-8) for j in range(8, N-8)])
+
+        self.img_coor = torch.Tensor([(i, j) for i in range(self.N) for j in range(self.N)])
+        self.n_features = 6
+
+    def generate_dataset(self, data_size=10_000, batch_size=64, noise=True, sigma=0.3, features_degree=1, seed=42, device='cpu', test_return=False):
+        if noise:
+            noise_tag = f'noise_{sigma}_'
+            # val = np.arange(0, 2, 0.01)
+            # distr = np.exp(-(val - 1)**2 / sigma**2)
+            # self.kernel = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)]) # adds gaussian noise
+            # self.kernel_bis = np.array([np.random.choice(val, size=self.N2, p=distr / distr.sum()) for _ in range(data_size)])
+
+            torch.manual_seed(seed)
+            mean = torch.full((data_size, self.N2), 1.)
+            std = torch.full((data_size, self.N2), sigma)
+            self.kernel = torch.normal(mean, std)
+            self.kernel_bis = torch.normal(mean, std)
+
+        else:
+            noise_tag = ''
+
+        features_path = f'{self.save_path}/{self.__class__.__name__}/features_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        true_imgs_path = f'{self.save_path}/{self.__class__.__name__}/true_images_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        imgs_path = f'{self.save_path}/{self.__class__.__name__}/images_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        noise_delta_path = f'{self.save_path}/{self.__class__.__name__}/noise_delta_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        
+        if os.path.exists(features_path):
+            self.features = torch.load(features_path)
+            self.imgs_1 = torch.load(true_imgs_path)
+            self.imgs = torch.load(imgs_path)
+            self.noise_delta = torch.load(noise_delta_path)
+
+        else:
+            # first particle
+            center_x_1 = torch.randint(8, 16, (data_size,))
+            center_y_1 = torch.randint(8, 16, (data_size,))
+            mean_1 = torch.rand((data_size,)) * 3 + 6
+            sig_1 = torch.rand((data_size,)) * 0.8 + 0.8
+            theta_1 = torch.rand((data_size,)) * 2 * np.pi
+            phi_1 = torch.rand((data_size,)) * 0.5
+            
+            self.features = torch.concat([
+                center_x_1.reshape(-1, 1),
+                center_y_1.reshape(-1, 1),
+                mean_1.reshape(-1, 1),
+                sig_1.reshape(-1, 1),
+                theta_1.reshape(-1, 1),
+                phi_1.reshape(-1, 1)
+            ], axis=1)
+
+            center_1 = torch.concat([center_x_1.reshape(-1, 1), center_y_1.reshape(-1, 1)], dim=1)
+            self.imgs_1 = self.gaussian_rings(data_size, center_1, mean_1, sig_1, theta_1, phi_1)
+
+            self.noise_delta = {'mse_loss':{'mean':0., 'std':0.}, 'l1_loss':{'mean':0., 'std':0.}}
+            if noise:
+                self.imgs = (self.imgs_1 * self.kernel) - self.imgs_1
+                self.imgs_bis = (self.imgs_1 * self.kernel_bis) - self.imgs_1
+
+                self.noise_delta['l1_loss']['mean'] = torch.abs(self.imgs - self.imgs_bis).mean(dim=1)
+                self.noise_delta['l1_loss']['std'] = self.noise_delta['l1_loss']['mean'].std().item()
+                self.noise_delta['l1_loss']['mean'] = self.noise_delta['l1_loss']['mean'].mean().item()
+
+                self.noise_delta['mse_loss']['mean'] = ((self.imgs - self.imgs_bis)**2).mean(dim=1)
+                self.noise_delta['mse_loss']['std'] = self.noise_delta['mse_loss']['mean'].std().item()
+                self.noise_delta['mse_loss']['mean'] = self.noise_delta['mse_loss']['mean'].mean().item()
+
+                self.imgs = self.imgs.reshape((data_size, self.N, self.N))
+
+            else:
+                self.imgs = self.imgs_1.reshape((data_size, self.N, self.N))
+                
+            if not test_return:
+                torch.save(self.features, features_path)
+                torch.save(self.imgs_1, true_imgs_path)
+                torch.save(self.imgs, imgs_path)
+                torch.save(self.noise_delta, noise_delta_path)
+
+        self.poly = PolynomialFeatures(degree=features_degree)
+        transformed_features = self.poly.fit_transform(self.features)
+
+        self.scaler = mmScaler()
+        self.transformed_features = self.scaler.fit_transform(transformed_features)
+
+        train_dataset = TensorDataset(
+            torch.tensor(self.transformed_features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
+            self.imgs[:int(self.train_fraction * data_size)].to(device)
+        )
+        test_dataset = TensorDataset(
+            torch.tensor(self.transformed_features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
+            self.imgs[int(self.train_fraction * data_size):].to(device)
+        )
+        
+        if test_return:
+            return self.features, self.imgs
+        else:
+            return DataLoader(train_dataset, batch_size=batch_size), DataLoader(test_dataset, batch_size=batch_size)
+
+    def generate_pixel_dataset(self, data_size=10_000, batch_size=64, sigma=0.3, features_degree=1, seed=42, device='cpu', test_return=False):
+        self.generate_dataset(data_size=data_size, noise=True, sigma=sigma, features_degree=features_degree, seed=seed, device=device, test_return=False)
+
+        self.features
+
+    def gaussian_rings(self, data_size, center, mean, sig, theta, phi):
+        centered = self.img_coor[None, :, :] - center[:, None, :]
+        radius = torch.linalg.norm(centered, dim=2)
+
+        angle = torch.acos(centered[:, :, 0] / (torch.sqrt(centered[:, :, 1]**2 + centered[:, :, 0]**2) + 1e-6)) * torch.sign(centered[:, :, 1] + 1e-6)
+        radius += torch.cos(angle - theta[:, None]) * radius * phi[:, None]
+
+        return torch.exp(-(radius - mean[:, None])**2 / sig[:, None]**2) / 2
+
+    def random_sample(self, n_samples: int):
+        data_size = len(self.features)
+        idx = torch.randint(0, data_size, (n_samples,))
+
+        features = self.features[idx]
+        transformed_features = self.scaler.transform(self.poly.transform(features))
+        imgs = self.imgs[idx]
+
+        return features.numpy(), transformed_features, imgs.numpy()
+
+    def ring_from_features(self, center_x, center_y, mean, sig, theta, phi):
+        centered = self.img_coor - torch.tensor([center_x, center_y])
+        radius = torch.linalg.norm(centered, dim=1)
+
+        angle = torch.acos(centered[:, 0] / (torch.sqrt(centered[:, 1]**2 + centered[:, 0]**2) + 1e-6)) * torch.sign(centered[:, 1] + 1e-6)
+        radius += torch.cos(angle - theta) * radius * phi
+        
+        return torch.exp(-(radius - mean)**2 / sig**2).reshape((self.N, self.N)) / 2
+
+
+
+class PixelRing():
+    def __init__(self, N, save_path='../save_data', train_fraction=0.8):
+        self.N = N
+        self.N2 = N**2
+        self.save_path = save_path
+        self.train_fraction = train_fraction
+
+        if not os.path.exists(f'{self.save_path}/{self.__class__.__name__}/'):
+            os.mkdir(f'{self.save_path}/{self.__class__.__name__}/')
+
+        self.centers = torch.Tensor([(i, j) for i in range(8, N-8) for j in range(8, N-8)])
+
+        self.img_coor = torch.Tensor([(i, j) for i in range(self.N) for j in range(self.N)])
+        self.n_features = 6
+
+    def generate_dataset(self, data_size=10_000, batch_size=64, noise=True, sigma=0.3, features_degree=1, seed=42, device='cpu', test_return=False):
+        if noise:
+            noise_tag = f'noise_{sigma}_'
+
+            torch.manual_seed(seed)
+            mean = torch.full((data_size, self.N2), 1.)
+            std = torch.full((data_size, self.N2), sigma)
+            self.kernel = torch.normal(mean, std)
+            self.kernel_bis = torch.normal(mean, std)
+
+        else:
+            noise_tag = ''
+
+        features_path = f'{self.save_path}/{self.__class__.__name__}/features_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        true_imgs_path = f'{self.save_path}/{self.__class__.__name__}/true_images_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        imgs_path = f'{self.save_path}/{self.__class__.__name__}/images_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        noise_delta_path = f'{self.save_path}/{self.__class__.__name__}/noise_delta_{self.N}_{data_size}_{noise_tag}{features_degree}_{seed}.npy'
+        
+        if os.path.exists(features_path):
+            self.features = torch.load(features_path)
+            self.imgs_1 = torch.load(true_imgs_path)
+            self.imgs = torch.load(imgs_path)
+            self.noise_delta = torch.load(noise_delta_path)
+
+        else:
+            # first particle
+            center_x_1 = torch.randint(8, 16, (data_size,))
+            center_y_1 = torch.randint(8, 16, (data_size,))
+            mean_1 = torch.rand((data_size,)) * 3 + 6
+            sig_1 = torch.rand((data_size,)) * 0.8 + 0.8
+            theta_1 = torch.zeros((data_size,)) * 2 * np.pi
+            phi_1 = torch.zeros((data_size,)) * 0.5
+            
+            self.features = torch.concat([
+                center_x_1.reshape(-1, 1),
+                center_y_1.reshape(-1, 1),
+                mean_1.reshape(-1, 1),
+                sig_1.reshape(-1, 1),
+                theta_1.reshape(-1, 1),
+                phi_1.reshape(-1, 1)
+            ], axis=1)
+
+            center_1 = torch.concat([center_x_1.reshape(-1, 1), center_y_1.reshape(-1, 1)], dim=1)
+            self.imgs_1 = self.gaussian_rings(data_size, center_1, mean_1, sig_1, theta_1, phi_1)
+
+            self.noise_delta = {'mse_loss':{'mean':0., 'std':0.}, 'l1_loss':{'mean':0., 'std':0.}}
+            if noise:
+                self.imgs = (self.imgs_1 * self.kernel)
+                self.imgs_bis = (self.imgs_1 * self.kernel_bis)
+
+                self.noise_delta['l1_loss']['mean'] = torch.abs(self.imgs - self.imgs_bis).mean(dim=1)
+                self.noise_delta['l1_loss']['std'] = self.noise_delta['l1_loss']['mean'].std().item()
+                self.noise_delta['l1_loss']['mean'] = self.noise_delta['l1_loss']['mean'].mean().item()
+
+                self.noise_delta['mse_loss']['mean'] = ((self.imgs - self.imgs_bis)**2).mean(dim=1)
+                self.noise_delta['mse_loss']['std'] = self.noise_delta['mse_loss']['mean'].std().item()
+                self.noise_delta['mse_loss']['mean'] = self.noise_delta['mse_loss']['mean'].mean().item()
+
+            else:
+                self.imgs = self.imgs_1.clone()
+                
+            if not test_return:
+                torch.save(self.features, features_path)
+                torch.save(self.imgs_1, true_imgs_path)
+                torch.save(self.imgs, imgs_path)
+                torch.save(self.noise_delta, noise_delta_path)
+
+        self.poly = PolynomialFeatures(degree=features_degree)
+        transformed_features = self.poly.fit_transform(self.features)
+
+        self.scaler = mmScaler()
+        self.transformed_features = self.scaler.fit_transform(transformed_features)
+
+        train_dataset = TensorDataset(
+            torch.tensor(self.transformed_features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
+            self.imgs[:int(self.train_fraction * data_size)].to(device),
+            self.imgs_1[:int(self.train_fraction * data_size)].to(device)
+        )
+        test_dataset = TensorDataset(
+            torch.tensor(self.transformed_features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
+            self.imgs[int(self.train_fraction * data_size):].to(device),
+            self.imgs_1[int(self.train_fraction * data_size):].to(device)
+        )
+        
+        if test_return:
+            return self.features, self.imgs
+        else:
+            return DataLoader(train_dataset, batch_size=batch_size), DataLoader(test_dataset, batch_size=batch_size)
+
+    def generate_pixel_dataset(self, data_size=10_000, batch_size=64, sigma=0.3, features_degree=1, seed=42, device='cpu', test_return=False):
+        self.generate_dataset(data_size=data_size, noise=True, sigma=sigma, features_degree=features_degree, seed=seed, device=device, test_return=False)
+
+        self.features
+
+    def gaussian_rings(self, data_size, center, mean, sig, theta, phi):
+        centered = self.img_coor[None, :, :] - center[:, None, :]
+        radius = torch.linalg.norm(centered, dim=2)
+
+        angle = torch.acos(centered[:, :, 0] / (torch.sqrt(centered[:, :, 1]**2 + centered[:, :, 0]**2) + 1e-6)) * torch.sign(centered[:, :, 1] + 1e-6)
+        radius += torch.cos(angle - theta[:, None]) * radius * phi[:, None]
+
+        return torch.exp(-(radius - mean[:, None])**2 / sig[:, None]**2) / 2
+
+    def random_sample(self, n_samples: int):
+        data_size = len(self.features)
+        idx = torch.randint(0, data_size, (n_samples,))
+
+        features = self.features[idx]
+        transformed_features = self.scaler.transform(self.poly.transform(features))
+        imgs = self.imgs[idx]
+
+        return features.numpy(), transformed_features, imgs.numpy()
+
+    def ring_from_features(self, center_x, center_y, mean, sig, theta, phi):
+        centered = self.img_coor - torch.tensor([center_x, center_y])
+        radius = torch.linalg.norm(centered, dim=1)
+
+        angle = torch.acos(centered[:, 0] / (torch.sqrt(centered[:, 1]**2 + centered[:, 0]**2) + 1e-6)) * torch.sign(centered[:, 1] + 1e-6)
+        radius += torch.cos(angle - theta) * radius * phi
+        
+        return torch.exp(-(radius - mean)**2 / sig**2).reshape((self.N, self.N)) / 2
+
 

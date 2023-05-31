@@ -82,3 +82,30 @@ class MSEAdjustLoss(nn.Module):
         mse_loss = F.mse_loss(pred, target)
 
         return torch.abs(mse_loss - self.adjust)
+
+
+
+class MSESumMinLoss(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(MSESumMinLoss, self).__init__()
+
+    def forward(self, pred, target):
+        mse_sum_min = torch.min(torch.sum(torch.pow(target - pred, 2), dim=0))
+
+        return mse_sum_min
+
+
+
+class PixelLoss(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(PixelLoss, self).__init__()
+
+    def forward(self, pred, kl, target, img_factor, kl_factor):
+
+        img = (pred - target)**2
+        loss = img * img_factor + kl * kl_factor
+
+        return loss.mean(), img.mean(), kl.mean()
+    
+
+#                losses, img = self.loss_fn(pred, kl / batch_size, target, self.img_factor, self.kl_factor)

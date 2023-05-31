@@ -60,6 +60,7 @@ if __name__ == "__main__" :
     parser.add_argument('-lrs', '--lr_step', type=float, help="Learning rate step")
     parser.add_argument('--mean_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with the average of several mc")
     parser.add_argument('--std_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with one mc")
+    parser.add_argument('--pixel_training', type=bool, action=argparse.BooleanOptionalAction, help="Special train for 'by pixel' model")
     parser.add_argument('--batch_mean_training', type=bool, action=argparse.BooleanOptionalAction, help="Predict on several batches before optimizing")
     parser.add_argument('-nb', '--n_batch', type=int, help="Number of batches to predict on for the batch mean training")
 
@@ -103,6 +104,7 @@ if __name__ == "__main__" :
     lr_step = args.lr_step                          # 0.1
     mean_training = args.mean_training              # True
     std_training = args.std_training                # True
+    pixel_training = args.pixel_training            # True
     batch_mean_training = args.batch_mean_training  # True
     n_batch = args.n_batch                          # True
     
@@ -143,6 +145,7 @@ if __name__ == "__main__" :
      - lr_step (-lrs): {lr_step}
      - mean_training (--mean_training): {mean_training}
      - std_training (--std_training): {std_training}
+     - pixel_training (--pixel_training): {pixel_training}
      - batch_mean_training (--batch_mean_training): {batch_mean_training}
      - n_batch (-nb): {n_batch}
 """
@@ -165,7 +168,7 @@ if __name__ == "__main__" :
         device=device
     )
 
-    adjust = data_gen.noise_delta.item()[loss_type]['mean']
+    adjust = data_gen.noise_delta[loss_type]['mean']
 
 
     ### load model ###
@@ -249,6 +252,7 @@ if __name__ == "__main__" :
             generator,
             mean_training,
             std_training,
+            pixel_training,
             n_batch,
             kl_factor,
             num_mc,
@@ -259,6 +263,7 @@ if __name__ == "__main__" :
         bayesian_train.train(
             train_loader,
             epochs,
+            pixel_training,
             batch_mean_training,
             kl_rate,
             adjust,

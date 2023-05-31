@@ -1363,27 +1363,33 @@ class DGBaNLinear22(torch.nn.Module):
 
 
 class OnePixel(nn.Module):
-    def __init__(self, input_size):
+    def __init__(self, input_size=29):
         super(OnePixel, self).__init__()
         
         self.linear_layers = blocks.NLinearNormAct(input_size, 1, 5)
         
     def forward(self, x):
-        x, kl = self.linear_layers        
+        x, kl = self.linear_layers(x)
         
         return x, kl
 
 
 
 class DGBaN1024(nn.Module):
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         super(DGBaN1024, self).__init__()
         self.pixels = nn.ModuleList([OnePixel() for _ in range(1024)])
 
-    def forward(self, x):
-        x = torch.stack([self.pixels[i](x[i]) for i in range(1024)])
+    def forward(self, X):
+        x = torch.zeros((128, 1024), device=X.device, dtype=X.dtype)
+        kl = torch.zeros((128, 1024), device=X.device, dtype=X.dtype)
 
-        return x.view(x.size(0), 32, 32)
+        for i in range(1024):
+            xi, kli = self.pixels[i](X[:, :, i])
+            x[:, i] = xi.squeeze()
+            kl[:, i] = kli.squeeze()
+
+        return x, kl
 
 
 
@@ -1391,7 +1397,7 @@ class DGBaNConv25(torch.nn.Module):
     def __init__(self, *args, **kwargs):
         super(DGBaNConv25, self).__init__()
 
-        self.linear_layers = blocks.NLinearNormAct(28, 1024, 5)
+        self.linear_layers = blocks.NLinearNormAct(15, 1024, 5)
 
         self.conv_layers = blocks.BayesSequential(
             blocks.BottleNeck(256, 256),

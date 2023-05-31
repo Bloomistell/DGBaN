@@ -1,20 +1,20 @@
 #!/bin/sh
 #SBATCH --job-name=DGBaN_training
 #SBATCH --gres=gpu:1
-#SBATCH --time=20:00:00
+#SBATCH --time=40:00:00
 #SBATCH --mem=32GB
-#SBATCH --cpus-per-task=1
-#SBATCH -o /home/J000000000007/DGBaN_project/run7_log.stdout
+#SBATCH --cpus-per-task=2
+#SBATCH -o /home/J000000000007/DGBaN_project/run0_log.stdout
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export CUDA_VISIBLE_DEVICES=7
+export CUDA_VISIBLE_DEVICES=0
 
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate DGBaN
 
 cd /home/J000000000007/DGBaN_project/DGBaN/
 python3 -u training/train_model.py \
- -n DGBaNConv25 \
+ -n DGBaN1024 \
  --bayesian \
  --no-random_init \
  --no-fix_weights \
@@ -26,26 +26,27 @@ python3 -u training/train_model.py \
  -s ../save_data \
  -i 1 \
 \
- -t single_random_ring \
- -d 640000 \
+ -t PixelRing \
+ -d 1000000 \
  -e 400 \
- -b 512 \
- -f 0.8 \
+ -b 128 \
+ -f 1 \
  --noise \
- -sig 0.03 \
+ -sig 0.3 \
  -fd 2 \
  -r 42 \
 \
  -o Adam \
- -l mse_loss \
+ -l PixelLoss \
  -lt mse_loss \
- -kl 0.0001 \
- -klr 1 \
+ -kl 0.1 \
+ -klr 1.05 \
  -mc 0 \
  -lr 1e-2 \
- -lrs 0.97 \
+ -lrs 0.95 \
  --no-mean_training \
- --std_training \
+ --no-std_training \
+ --pixel_training \
  --no-batch_mean_training \
  -nb 8
 
