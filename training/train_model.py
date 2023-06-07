@@ -61,6 +61,8 @@ if __name__ == "__main__" :
     parser.add_argument('--mean_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with the average of several mc")
     parser.add_argument('--std_training', type=bool, action=argparse.BooleanOptionalAction, help="Train with one mc")
     parser.add_argument('--pixel_training', type=bool, action=argparse.BooleanOptionalAction, help="Special train for 'by pixel' model")
+    parser.add_argument('--sepixel_training', type=bool, action=argparse.BooleanOptionalAction, help="Operates the backward and optimization on one pixel at a time")
+    parser.add_argument('--one_pixel_training', type=bool, action=argparse.BooleanOptionalAction, help="Trains one pixel")
     parser.add_argument('--batch_mean_training', type=bool, action=argparse.BooleanOptionalAction, help="Predict on several batches before optimizing")
     parser.add_argument('-nb', '--n_batch', type=int, help="Number of batches to predict on for the batch mean training")
 
@@ -105,6 +107,8 @@ if __name__ == "__main__" :
     mean_training = args.mean_training              # True
     std_training = args.std_training                # True
     pixel_training = args.pixel_training            # True
+    sepixel_training = args.sepixel_training        # True
+    one_pixel_training = args.one_pixel_training    # True
     batch_mean_training = args.batch_mean_training  # True
     n_batch = args.n_batch                          # True
     
@@ -146,6 +150,8 @@ if __name__ == "__main__" :
      - mean_training (--mean_training): {mean_training}
      - std_training (--std_training): {std_training}
      - pixel_training (--pixel_training): {pixel_training}
+     - sepixel_training (--sepixel_training): {sepixel_training}
+     - one_pixel_training (--one_pixel_training): {one_pixel_training}
      - batch_mean_training (--batch_mean_training): {batch_mean_training}
      - n_batch (-nb): {n_batch}
 """
@@ -253,6 +259,8 @@ if __name__ == "__main__" :
             mean_training,
             std_training,
             pixel_training,
+            sepixel_training,
+            one_pixel_training,
             n_batch,
             kl_factor,
             num_mc,

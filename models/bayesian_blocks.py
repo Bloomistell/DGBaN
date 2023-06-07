@@ -82,6 +82,7 @@ class NLinearNormAct(nn.Module):
         out_channels: int,
         n_layers: int,
         act: nn.Module = nn.ReLU,
+        last_layer: bool = False,
         **kwargs
     ):
         super(NLinearNormAct, self).__init__()
@@ -97,7 +98,8 @@ class NLinearNormAct(nn.Module):
             penultimate = int(in_channels * factor**(i+1))
             
         self.linear_act.append(BayesLinear(penultimate, out_channels))
-        self.linear_act.append(act())
+        if not last_layer:
+            self.linear_act.append(act())
         
         self.linear_act = nn.ModuleList(self.linear_act)
 

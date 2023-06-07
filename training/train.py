@@ -144,6 +144,8 @@ class bayesian_training():
         mean_training,
         std_training,
         pixel_training,
+        sepixel_training,
+        one_pixel_training,
         n_batch,
         kl_factor,
         num_mc,
@@ -199,21 +201,56 @@ class bayesian_training():
                 self.optimizer.step()
 
         elif pixel_training:
-            def inner_training(i, X, target, true_target=None):
-                self.optimizer.zero_grad()
+            def inner_training(i, X, target, true_target):
+                pred, kl = self.model(X, true_target)
 
-                X_expanded = X.unsqueeze(-1).expand(-1, -1, 1024)
-                X = torch.cat((X_expanded, true_target.unsqueeze(1)), dim=1)
+                pixel_loss, img, kl = self.loss_fn(pred, kl, target, self.img_factor, self.kl_factor)
 
-                pred, kl = self.model(X)
-
-                loss, img, kl = self.loss_fn(pred, kl, target, self.img_factor, self.kl_factor)
-
-                self.train_loss += loss.item()
+                self.train_loss += pixel_loss.mean().item()
                 self.img_loss += img.item()
                 self.kl_loss += kl.item()
 
-                loss.backward()
+                for i in range(1024):
+                    self.optimizer.zero_grad()
+                    if i == 1023:
+                        pixel_loss[i].backward()
+                    else:
+                        pixel_loss[i].backward(retain_graph=True)
+                    self.optimizer.step()
+
+        elif sepixel_training:
+            def inner_training(i, X, target, true_target=None):
+                pred, kl = self.model(X)
+                img = self.loss_fn(pred, target)
+
+                pixel_loss = img * self.img_factor + kl * self.kl_factor
+
+                self.train_loss += pixel_loss.mean().item()
+                self.img_loss += img.mean().item()
+                self.kl_loss += kl.item()
+
+                for i in range(1024):
+                    self.optimizer.zero_grad()
+                    if i == 1023:
+                        pixel_loss[i].backward()
+                    else:
+                        pixel_loss[i].backward(retain_graph=True)
+                    self.optimizer.step()
+
+        elif one_pixel_training:
+            def inner_training(i, X, target, true_target=None):
+                self.optimizer.zero_grad()
+
+                pred, kl = self.model(X)
+
+                img = self.loss_fn(pred, target)
+                pixel_loss = img * self.img_factor + kl * self.kl_factor
+
+                self.train_loss += pixel_loss.item()
+                self.img_loss += img.item()
+                self.kl_loss += kl.item()
+
+                pixel_loss.backward()
                 self.optimizer.step()
 
         else:
@@ -286,7 +323,7 @@ class bayesian_training():
                     writer.add_scalar('img loss', self.img_loss / print_step, epoch * train_steps + i)
                     writer.add_scalar('kl loss', self.kl_loss / print_step, epoch * train_steps + i)
 
-                    total_img_loss += self.img_loss / print_step
+                    total_img_loss = self.img_loss / print_step
                     count += 1
 
                     self.train_loss = 0.
@@ -323,7 +360,7 @@ class bayesian_training():
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-            if total_img_loss / count > adjust * 1.01:
+            if total_img_loss > adjust * 1.01:
                 self.kl_factor /= kl_rate
             else:
                 self.kl_factor *= kl_rate

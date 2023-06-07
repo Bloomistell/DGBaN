@@ -105,7 +105,17 @@ class PixelLoss(nn.Module):
         img = (pred - target)**2
         loss = img * img_factor + kl * kl_factor
 
-        return loss.mean(), img.mean(), kl.mean()
-    
+        return loss.mean(dim=0), img.mean(), kl.mean()
+
+
+
+class SEPixelLoss(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(SEPixelLoss, self).__init__()
+
+    def forward(self, pred, target):
+        loss = (pred - target)**2
+
+        return loss.mean(dim=0)
 
 #                losses, img = self.loss_fn(pred, kl / batch_size, target, self.img_factor, self.kl_factor)

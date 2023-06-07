@@ -1293,7 +1293,7 @@ class DGBaNConv17(torch.nn.Module):
         x, kl = self.conv_layers(x)
         kl_sum += kl
         
-        return x.squeeze(dim=1), kl_sum
+        return x.squeeze(dim=1).reshape(x.size(0), 1024), kl_sum
     
 
 
@@ -1363,15 +1363,34 @@ class DGBaNLinear22(torch.nn.Module):
 
 
 class OnePixel(nn.Module):
-    def __init__(self, input_size=29):
+    def __init__(self, *args, **kwargs):
         super(OnePixel, self).__init__()
         
-        self.linear_layers = blocks.NLinearNormAct(input_size, 1, 5)
+        # self.conv_layers = blocks.BayesSequential(
+        #     blocks.ConvNormAct(1, 2, 5, 2, 1, transpose=False),
+        #     blocks.ConvNormAct(2, 4, 3, 2, 1, transpose=False),
+        #     blocks.ConvNormAct(4, 8, 3, 2, 1, transpose=False),
+        #     blocks.ConvNormAct(8, 16, 3, 2, 1, transpose=False)
+        # )
+        
+        self.linear_1 = BayesLinear(36, 18)
+        self.linear_2 = BayesLinear(18, 9)
+        self.linear_3 = BayesLinear(9, 1)
         
     def forward(self, x):
-        x, kl = self.linear_layers(x)
+        # z = self.conv_layers(true_target)
+
+        kl_sum = 0
+        x, kl = self.linear_1(x)
+        kl_sum += kl
+        x = F.relu(x)
+        x, kl = self.linear_2(x)
+        kl_sum += kl
+        x = F.relu(x)
+        x, kl = self.linear_3(x)
+        kl_sum += kl
         
-        return x, kl
+        return x, kl_sum
 
 
 
@@ -1380,12 +1399,12 @@ class DGBaN1024(nn.Module):
         super(DGBaN1024, self).__init__()
         self.pixels = nn.ModuleList([OnePixel() for _ in range(1024)])
 
-    def forward(self, X):
-        x = torch.zeros((128, 1024), device=X.device, dtype=X.dtype)
-        kl = torch.zeros((128, 1024), device=X.device, dtype=X.dtype)
+    def forward(self, X, true_target):
+        x = torch.zeros((X.size(0), 1024), device=X.device, dtype=X.dtype)
+        kl = torch.zeros((X.size(0), 1024), device=X.device, dtype=X.dtype)
 
         for i in range(1024):
-            xi, kli = self.pixels[i](X[:, :, i])
+            xi, kli = self.pixels[i](X, true_target[:, i])
             x[:, i] = xi.squeeze()
             kl[:, i] = kli.squeeze()
 
@@ -1504,3 +1523,4 @@ class DGBaNConv33(torch.nn.Module):
         
         return x.squeeze(dim=1), kl_sum
     
+
