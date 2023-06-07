@@ -4,10 +4,10 @@
 #SBATCH --time=40:00:00
 #SBATCH --mem=32GB
 #SBATCH --cpus-per-task=2
-#SBATCH -o /home/J000000000007/DGBaN_project/run1_log.stdout
+#SBATCH -o /home/J000000000007/DGBaN_project/run0_log.stdout
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate DGBaN
@@ -28,7 +28,7 @@ python3 -u training/train_model.py \
 \
  -t SinglePixel \
  -d 1000000 \
- -e 400 \
+ -e 800 \
  -b 128 \
  -f 1 \
  --noise \
@@ -39,11 +39,11 @@ python3 -u training/train_model.py \
  -o Adam \
  -l mse_loss \
  -lt mse_loss \
- -kl 0.01 \
- -klr 1.1 \
+ -kl 100 \
+ -klr 1.05 \
  -mc 0 \
- -lr 1e-3 \
- -lrs 0.97 \
+ -lr 1e-2 \
+ -lrs 0.9 \
  --no-mean_training \
  --no-std_training \
  --no-pixel_training \

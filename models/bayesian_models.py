@@ -148,7 +148,7 @@ class multi_b1conv_DGBaNR(torch.nn.Module): # the idea for this one is to keep t
 
         self.img_size = img_size
 
-        self.linear_1 = nn.Linear(input_size // 2, 54)
+        self.linear_1 = BayesLinear(input_size // 2, 54)
         self.linear_2 = nn.Linear(input_size // 2, 54)
 
         self.linear_layers = nn.Sequential(
@@ -1373,9 +1373,12 @@ class OnePixel(nn.Module):
         #     blocks.ConvNormAct(8, 16, 3, 2, 1, transpose=False)
         # )
         
-        self.linear_1 = BayesLinear(36, 18)
-        self.linear_2 = BayesLinear(18, 9)
-        self.linear_3 = BayesLinear(9, 1)
+        self.linear_1 = BayesLinear(36, 30)
+        self.linear_2 = BayesLinear(30, 24)
+        self.linear_3 = BayesLinear(24, 18)
+        self.linear_4 = BayesLinear(18, 12)
+        self.linear_5 = BayesLinear(12, 6)
+        self.linear_6 = BayesLinear(6, 1)
         
     def forward(self, x):
         # z = self.conv_layers(true_target)
@@ -1388,6 +1391,15 @@ class OnePixel(nn.Module):
         kl_sum += kl
         x = F.relu(x)
         x, kl = self.linear_3(x)
+        kl_sum += kl
+        x = F.relu(x)
+        x, kl = self.linear_4(x)
+        kl_sum += kl
+        x = F.relu(x)
+        x, kl = self.linear_5(x)
+        kl_sum += kl
+        x = F.relu(x)
+        x, kl = self.linear_6(x)
         kl_sum += kl
         
         return x, kl_sum

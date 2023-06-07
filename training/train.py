@@ -360,10 +360,10 @@ class bayesian_training():
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-            if total_img_loss > adjust * 1.01:
-                self.kl_factor /= kl_rate
-            else:
-                self.kl_factor *= kl_rate
+            # if total_img_loss > adjust * 1.01:
+            #     self.kl_factor /= kl_rate
+            # else:
+            #     self.kl_factor *= kl_rate
 
             # if total_img_loss / count > adjust * 1.1:
             #     self.kl_factor = min(self.img_factor, self.kl_factor)
