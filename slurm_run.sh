@@ -14,7 +14,7 @@ conda activate DGBaN
 
 cd /home/J000000000007/DGBaN_project/DGBaN/
 python3 -u training/train_model.py \
- -n OnePixel \
+ -n HalfDGBaNConv17 \
  --bayesian \
  --no-random_init \
  --no-fix_weights \
@@ -22,14 +22,14 @@ python3 -u training/train_model.py \
  --no-use_base \
  --no-vessel \
  --no-pretrained \
- -id 11 \
+ -id 55 \
  -s ../save_data \
  -i 1 \
 \
- -t SinglePixel \
+ -t SingleRandomRing \
  -d 1000000 \
  -e 800 \
- -b 128 \
+ -b 256 \
  -f 1 \
  --noise \
  -sig 0.3 \
@@ -39,16 +39,16 @@ python3 -u training/train_model.py \
  -o Adam \
  -l mse_loss \
  -lt mse_loss \
- -kl 100 \
- -klr 1.05 \
+ -kl 1 \
+ -klr 0.1 \
  -mc 0 \
  -lr 1e-2 \
- -lrs 0.9 \
+ -lrs 0.97 \
  --no-mean_training \
- --no-std_training \
+ --std_training \
  --no-pixel_training \
  --no-sepixel_training \
- --one_pixel_training \
+ --no-one_pixel_training \
  --no-batch_mean_training \
  -nb 8
 

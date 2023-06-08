@@ -9,6 +9,7 @@ from bayesian_torch.layers.variational_layers.conv_variational import (
 )
 
 import models.bayesian_blocks as blocks
+import models.deterministic_blocks as d_blocks
 
 
 
@@ -1373,36 +1374,24 @@ class OnePixel(nn.Module):
         #     blocks.ConvNormAct(8, 16, 3, 2, 1, transpose=False)
         # )
         
-        self.linear_1 = BayesLinear(36, 30)
-        self.linear_2 = BayesLinear(30, 24)
-        self.linear_3 = BayesLinear(24, 18)
-        self.linear_4 = BayesLinear(18, 12)
-        self.linear_5 = BayesLinear(12, 6)
-        self.linear_6 = BayesLinear(6, 1)
+        self.linear_1 = BayesLinear(36, 18)
+        self.linear_2 = BayesLinear(18, 9)
+        self.linear_3 = BayesLinear(9, 1)
         
-    def forward(self, x):
+    def forward(self, x, true):
         # z = self.conv_layers(true_target)
 
         kl_sum = 0
         x, kl = self.linear_1(x)
         kl_sum += kl
-        x = F.relu(x)
+        x = F.relu(x * true)
         x, kl = self.linear_2(x)
         kl_sum += kl
-        x = F.relu(x)
+        x = F.relu(x * true)
         x, kl = self.linear_3(x)
         kl_sum += kl
-        x = F.relu(x)
-        x, kl = self.linear_4(x)
-        kl_sum += kl
-        x = F.relu(x)
-        x, kl = self.linear_5(x)
-        kl_sum += kl
-        x = F.relu(x)
-        x, kl = self.linear_6(x)
-        kl_sum += kl
         
-        return x, kl_sum
+        return x * true + true, kl_sum
 
 
 
@@ -1536,3 +1525,82 @@ class DGBaNConv33(torch.nn.Module):
         return x.squeeze(dim=1), kl_sum
     
 
+
+class HalfDGBaNConv17(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(HalfDGBaNConv17, self).__init__()
+
+        self.linear_1 = BayesLinear(28, 56)
+        self.linear_2 = BayesLinear(56, 112)
+        self.linear_3 = BayesLinear(112, 224)
+        self.linear_4 = BayesLinear(224, 448)
+        self.linear_5 = BayesLinear(448, 896)
+        self.linear_6 = nn.Linear(896, 1024)
+
+        self.conv_layers = nn.Sequential(
+            d_blocks.BottleNeck(256, 256),
+            d_blocks.Conv2x3x3NormAct(256, 128, shortcut=d_blocks.Conv1x1BnReLU(256, 128)),
+            d_blocks.ResidualAdd(
+                nn.Sequential(
+                    d_blocks.ScaleUp(128, 2, 0, (4, 4)),
+                    d_blocks.Conv3x3BnReLU(128, 128)
+                ),
+                d_blocks.ConvNormAct(128, 128, 1, 2, 0, 1)
+            ),
+            d_blocks.Conv2x3x3NormAct(128, 64, shortcut=d_blocks.Conv1x1BnReLU(128, 64)),
+            d_blocks.ResidualAdd(
+                nn.Sequential(
+                    d_blocks.ScaleUp(64, 2, 0, (8, 8)),
+                    d_blocks.Conv3x3BnReLU(64, 64)
+                ),
+                d_blocks.ConvNormAct(64, 64, 1, 2, 0, 1)
+            ),
+            d_blocks.Conv2x3x3NormAct(64, 32, shortcut=d_blocks.Conv1x1BnReLU(64, 32)),
+            d_blocks.ResidualAdd(
+                nn.Sequential(
+                    d_blocks.ScaleUp(32, 2, 0, (16, 16)),
+                    d_blocks.Conv3x3BnReLU(32, 32)
+                ),
+                d_blocks.ConvNormAct(32, 32, 1, 2, 0, 1)
+            ),
+            d_blocks.Conv2x3x3NormAct(32, 16, shortcut=d_blocks.Conv1x1BnReLU(32, 16)),
+            d_blocks.LastConv(16, 5, 2, 2, (32, 32))
+        )
+
+    def forward(self, x):
+        kl_sum = 0
+
+        z = x.clone()
+        
+        z = torch.cat((z, z), dim=1)
+        x, kl = self.linear_1(x)
+        kl_sum += kl
+        x = F.relu(x * z)
+        
+        z = torch.cat((z, z), dim=1)
+        x, kl = self.linear_2(x)
+        kl_sum += kl
+        x = F.relu(x * z)
+        
+        z = torch.cat((z, z), dim=1)
+        x, kl = self.linear_3(x)
+        kl_sum += kl
+        x = F.relu(x * z)
+        
+        z = torch.cat((z, z), dim=1)
+        x, kl = self.linear_4(x)
+        kl_sum += kl
+        x = F.relu(x * z)
+        
+        z = torch.cat((z, z), dim=1)
+        x, kl = self.linear_5(x)
+        kl_sum += kl
+        x = F.relu(x * z)
+        
+        x = F.relu(self.linear_6(x))
+
+        x = x.view(x.size(0), 256, 2, 2)
+
+        x = self.conv_layers(x)
+        
+        return x.squeeze(dim=1).reshape(x.size(0), 1024), kl_sum

@@ -271,7 +271,6 @@ if __name__ == "__main__" :
         bayesian_train.train(
             train_loader,
             epochs,
-            pixel_training,
             batch_mean_training,
             kl_rate,
             adjust,

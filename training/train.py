@@ -241,7 +241,7 @@ class bayesian_training():
             def inner_training(i, X, target, true_target=None):
                 self.optimizer.zero_grad()
 
-                pred, kl = self.model(X)
+                pred, kl = self.model(X, true_target)
 
                 img = self.loss_fn(pred, target)
                 pixel_loss = img * self.img_factor + kl * self.kl_factor
@@ -277,7 +277,6 @@ class bayesian_training():
         self,
         train_loader,
         epochs,
-        pixel_training,
         batch_mean_training,
         kl_rate,
         adjust,
@@ -289,7 +288,7 @@ class bayesian_training():
         train_steps = len(train_loader)
         print_step = train_steps // 50
 
-        img_factor = 1
+        interval = 0.1
 
         for epoch in range(epochs):
             print(f'\nEPOCH {epoch + 1}:')
@@ -302,13 +301,8 @@ class bayesian_training():
 
             start = time.time()
             self.optimizer.zero_grad()
-            for i, tensors in enumerate(train_loader):
-                if pixel_training:
-                    X, target, true_target = tensors
-                    self.inner_training(i, X, target, true_target)
-                else:
-                    X, target = tensors
-                    self.inner_training(i, X, target)
+            for i, (X, target, true_target) in enumerate(train_loader):
+                self.inner_training(i, X, target, true_target)
 
                 if i % print_step == 0 and i != 0:
                     end = time.time()
@@ -323,7 +317,7 @@ class bayesian_training():
                     writer.add_scalar('img loss', self.img_loss / print_step, epoch * train_steps + i)
                     writer.add_scalar('kl loss', self.kl_loss / print_step, epoch * train_steps + i)
 
-                    total_img_loss = self.img_loss / print_step
+                    total_img_loss += self.img_loss / print_step
                     count += 1
 
                     self.train_loss = 0.
@@ -360,10 +354,13 @@ class bayesian_training():
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-            # if total_img_loss > adjust * 1.01:
-            #     self.kl_factor /= kl_rate
-            # else:
-            #     self.kl_factor *= kl_rate
+            if total_img_loss / count > adjust * (1 + interval):
+                self.kl_factor /= 1 + kl_rate
+            elif total_img_loss / count < adjust * (1 - interval):
+                self.kl_factor *= 1 + kl_rate
+            else:
+                interval /= 2
+                kl_rate /= 2
 
             # if total_img_loss / count > adjust * 1.1:
             #     self.kl_factor = min(self.img_factor, self.kl_factor)

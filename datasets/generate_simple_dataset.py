@@ -570,11 +570,13 @@ class SingleRandomRing():
 
         train_dataset = TensorDataset(
             torch.tensor(self.transformed_features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
-            self.imgs[:int(self.train_fraction * data_size)].to(device)
+            self.imgs[:int(self.train_fraction * data_size)].to(device),
+            torch.zeros((int(self.train_fraction * data_size),), dtype=torch.bool)
         )
         test_dataset = TensorDataset(
             torch.tensor(self.transformed_features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
-            self.imgs[int(self.train_fraction * data_size):].to(device)
+            self.imgs[int(self.train_fraction * data_size):].to(device),
+            torch.zeros((data_size - int(self.train_fraction * data_size),), dtype=torch.bool)
         )
         
         if test_return:
@@ -1062,7 +1064,6 @@ class SinglePixel():
             std = torch.full((data_size, 1), sigma)
             self.kernel = torch.normal(mean, std)
             self.kernel_bis = torch.normal(mean, std)
-
         else:
             noise_tag = ''
 
@@ -1131,12 +1132,12 @@ class SinglePixel():
 
         train_dataset = TensorDataset(
             torch.tensor(self.transformed_features[:int(self.train_fraction * data_size)], dtype=torch.float, device=device),
-            # self.imgs_1[:int(self.train_fraction * data_size)].to(device),
+            self.imgs_1[:int(self.train_fraction * data_size)].to(device),
             self.imgs[:int(self.train_fraction * data_size)].to(device)
         )
         test_dataset = TensorDataset(
             torch.tensor(self.transformed_features[int(self.train_fraction * data_size):], dtype=torch.float, device=device),
-            # self.imgs_1[int(self.train_fraction * data_size):].to(device),
+            self.imgs_1[int(self.train_fraction * data_size):].to(device),
             self.imgs[int(self.train_fraction * data_size):].to(device)
         )
         
