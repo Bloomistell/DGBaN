@@ -241,7 +241,7 @@ class bayesian_training():
             def inner_training(i, X, target, true_target=None):
                 self.optimizer.zero_grad()
 
-                pred, kl = self.model(X, true_target)
+                pred, kl = self.model(X)
 
                 img = self.loss_fn(pred, target)
                 pixel_loss = img * self.img_factor + kl * self.kl_factor
@@ -360,7 +360,7 @@ class bayesian_training():
                 self.kl_factor *= 1 + kl_rate
             else:
                 interval /= 2
-                kl_rate /= 2
+                kl_rate *= 0.8
 
             # if total_img_loss / count > adjust * 1.1:
             #     self.kl_factor = min(self.img_factor, self.kl_factor)

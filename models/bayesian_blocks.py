@@ -35,6 +35,21 @@ class BayesSequential(nn.Module):
         return x, kl
 
 
+class BayesSequential(nn.Module):
+    def __init__(self, *args):
+        super(BayesSequential, self).__init__()
+        self.bayes_modules = nn.ModuleList(args)
+
+    def forward(self, x, mul: torch.Tensor = None):
+        kl_sum = 0
+        for module in self.bayes_modules:
+            x, kl = module(x, mul)
+            kl_sum += kl
+
+        return x, kl
+
+
+
 class View(nn.Module):
     def __init__(self, shape):
         super(View, self).__init__()
@@ -51,7 +66,7 @@ class ScaleUp(nn.Module):
         # NOTE: you have to modify the source code for ConvTranspose2dReparameterization because groups and dilation are inverted
         self.conv_t = BayesConvTranspose2d(in_channels, out_channels, 1, stride, padding, output_padding=output_padding, groups=out_channels)
 
-    def forward(self, x):
+    def forward(self, x, mul: torch.Tensor = None):
         return self.conv_t(x)
 
 
@@ -126,9 +141,12 @@ class ConvNormAct(nn.Module):
         norm: nn.Module = nn.BatchNorm2d,
         act: nn.Module = nn.ReLU,
         transpose: bool = True,
+        mul: bool = False,
         **kwargs
     ):
         super(ConvNormAct, self).__init__()
+
+        self.out_channels = out_channels
 
         if transpose:
             self.conv = BayesConvTranspose2d(
@@ -147,11 +165,20 @@ class ConvNormAct(nn.Module):
                     stride=stride,
                     padding=padding
                 )
-        self.norm_act = nn.Sequential(norm(out_channels), act())
+        self.norm = norm(out_channels)
+        self.act = act()
 
-    def forward(self, x):
-        x, kl = self.conv(x)
-        x = self.norm_act(x)
+    def forward(self, x, mul: torch.Tensor = None):
+        if mul is None:
+            x, kl = self.conv(x)
+            x = self.act(self.norm(x))
+
+        else:
+            mul = torch.cat((mul,) * (self.out_channels // 28), dim=1)
+
+            x, kl = self.conv(x)
+            x = self.act(self.norm(x) * mul)
+        
         return x, kl
 
 
@@ -165,10 +192,10 @@ class ResidualAdd(nn.Module):
         self.block = block
         self.shortcut = shortcut
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, mul: torch.Tensor = None) -> torch.Tensor:
         kl_sum = 0
         res = x
-        x, kl = self.block(x)
+        x, kl = self.block(x, mul)
         kl_sum += kl
 
         if self.shortcut:
@@ -178,11 +205,52 @@ class ResidualAdd(nn.Module):
         return x, kl_sum
 
 
+class ResidualMul(nn.Module):
+    def __init__(self, block: nn.Module, shortcut: nn.Module = None):
+        super().__init__()
+        self.block = block
+        self.shortcut = shortcut
+
+    def forward(self, x: torch.Tensor, mul: torch.Tensor = None) -> torch.Tensor:
+        kl_sum = 0
+        res = x
+        x, kl = self.block(x, mul)
+        kl_sum += kl
+
+        if self.shortcut:
+            res, kl = self.shortcut(res)
+        x = x * res
+        kl_sum += kl
+        return x, kl_sum
+    
+
+class ResidualAddMul(nn.Module):
+    def __init__(self, block: nn.Module, shortcut: nn.Module = None):
+        super().__init__()
+        self.block = block
+        self.shortcut = shortcut
+
+    def forward(self, x: torch.Tensor, mul: torch.Tensor = None) -> torch.Tensor:
+        kl_sum = 0
+        res = x
+        x, kl = self.block(x, mul)
+        kl_sum += kl
+
+        if self.shortcut:
+            res, kl = self.shortcut(res)
+        x = x * res + res
+        kl_sum += kl
+        return x, kl_sum
+
+
 class BottleNeck(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None, reduction: int = 4):
+    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None, reduction: int = 4, residual: nn.Module = ResidualAdd):
         reduced_channels = out_channels // reduction
         super(BottleNeck, self).__init__()
-        self.block = ResidualAdd(
+
+        self.out_channels = out_channels
+
+        self.block = residual(
             BayesSequential(
                 Conv1x1BnReLU(out_channels, reduced_channels),
                 Conv3x3BnReLU(reduced_channels, reduced_channels),
@@ -191,17 +259,21 @@ class BottleNeck(nn.Module):
             shortcut,
         )
         
-    def forward(self, x):
-        x, kl = self.block(x)
+    def forward(self, x, mul: torch.Tensor = None):
+        x, kl = self.block(x, mul)
         x = F.relu(x)
+
         return x, kl
 
 
 class LinearBottleNeck(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None, reduction: int = 4):
+    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None, reduction: int = 4, residual: nn.Module = ResidualAdd):
         reduced_in_channels = out_channels // reduction
         super(LinearBottleNeck, self).__init__()
-        self.block = ResidualAdd(
+        
+        self.out_channels = out_channels
+
+        self.block = residual(
             BayesSequential(
                 Conv1x1BnReLU(out_channels, reduced_in_channels),
                 Conv3x3BnReLU(reduced_in_channels, reduced_in_channels),
@@ -210,16 +282,20 @@ class LinearBottleNeck(nn.Module):
             shortcut,
         )
         
-    def forward(self, x):
-        x, kl = self.block(x)
+    def forward(self, x, mul: torch.Tensor = None):
+        x, kl = self.block(x, mul)
         x = F.relu(x)
+
         return x, kl
 
 
 class Conv3x11x3NormAct(nn.Sequential):
-    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None):
+    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None, residual: nn.Module = ResidualAdd):
         super(Conv3x11x3NormAct, self).__init__()
-        self.block = ResidualAdd(
+        
+        self.out_channels = out_channels
+
+        self.block = residual(
             BayesSequential(
                 ConvNormAct(in_channels, in_channels, (3, 1), 1, (1, 0)),
                 ConvNormAct(in_channels, out_channels, (1, 3), 1, (0, 1), act=nn.Identity)
@@ -227,26 +303,31 @@ class Conv3x11x3NormAct(nn.Sequential):
             shortcut,
         )
 
-    def forward(self, x):
-        x, kl = self.block(x)
+    def forward(self, x, mul: torch.Tensor = None):
+        x, kl = self.block(x, mul)
         x = F.relu(x)
+
         return x, kl
 
         
 class Conv2x3x3NormAct(nn.Sequential):
-    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None):
+    def __init__(self, in_channels: int, out_channels: int, shortcut: nn.Module = None, residual: nn.Module = ResidualAdd):
         super(Conv2x3x3NormAct, self).__init__()
-        self.block = ResidualAdd(
+
+        self.out_channels = out_channels
+
+        self.block = residual(
             BayesSequential(
                 ConvNormAct(in_channels, in_channels, 3, 1, 1),
                 ConvNormAct(in_channels, out_channels, 3, 1, 1, act=nn.Identity)
             ),
             shortcut,
         )
-
-    def forward(self, x):
-        x, kl = self.block(x)
+    
+    def forward(self, x, mul: torch.Tensor = None):
+        x, kl = self.block(x, mul)
         x = F.relu(x)
+
         return x, kl
 
 
@@ -254,7 +335,7 @@ class LastConv(nn.Module):
     def __init__(self, in_channels, kernel, stride, padding, output_padding):
         super(LastConv, self).__init__()
         self.conv_t = BayesConvTranspose2d(in_channels, 1, kernel, stride, padding, output_padding=output_padding)
-    
-    def forward(self, x):
+
+    def forward(self, x, mul=None): # mul for consistancy among the blocks
         x, kl = self.conv_t(x)
         return x, kl

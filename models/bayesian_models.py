@@ -1367,31 +1367,26 @@ class OnePixel(nn.Module):
     def __init__(self, *args, **kwargs):
         super(OnePixel, self).__init__()
         
-        # self.conv_layers = blocks.BayesSequential(
-        #     blocks.ConvNormAct(1, 2, 5, 2, 1, transpose=False),
-        #     blocks.ConvNormAct(2, 4, 3, 2, 1, transpose=False),
-        #     blocks.ConvNormAct(4, 8, 3, 2, 1, transpose=False),
-        #     blocks.ConvNormAct(8, 16, 3, 2, 1, transpose=False)
-        # )
-        
-        self.linear_1 = BayesLinear(36, 18)
-        self.linear_2 = BayesLinear(18, 9)
-        self.linear_3 = BayesLinear(9, 1)
-        
-    def forward(self, x, true):
-        # z = self.conv_layers(true_target)
+        self.linear_0 = nn.Linear(84, 42)
+        self.linear_1 = nn.Linear(84, 42)
 
+        self.linear_2 = BayesLinear(42, 42)
+
+        self.dropout = nn.Dropout(0.5)
+        
+    def forward(self, x):
         kl_sum = 0
-        x, kl = self.linear_1(x)
-        kl_sum += kl
-        x = F.relu(x * true)
-        x, kl = self.linear_2(x)
-        kl_sum += kl
-        x = F.relu(x * true)
-        x, kl = self.linear_3(x)
+
+        x_0 = self.linear_0(x)
+        x_1 = self.linear_1(x)
+
+        x, kl = self.linear_2(x_0)
+        x = x + x_1
         kl_sum += kl
         
-        return x * true + true, kl_sum
+        x = x.mean(dim=1).unsqueeze(-1)
+        
+        return x, kl_sum
 
 
 
@@ -1530,16 +1525,14 @@ class HalfDGBaNConv17(torch.nn.Module):
     def __init__(self, *args, **kwargs):
         super(HalfDGBaNConv17, self).__init__()
 
-        self.linear_1 = BayesLinear(28, 56)
-        self.linear_2 = BayesLinear(56, 112)
-        self.linear_3 = BayesLinear(112, 224)
-        self.linear_4 = BayesLinear(224, 448)
-        self.linear_5 = BayesLinear(448, 896)
-        self.linear_6 = nn.Linear(896, 1024)
+        self.linear_1 = BayesLinear(56, 112)
+        self.linear_2 = BayesLinear(112, 224)
+        self.linear_3 = BayesLinear(224, 448)
+        self.linear_4 = BayesLinear(448, 896)
 
         self.conv_layers = nn.Sequential(
-            d_blocks.BottleNeck(256, 256),
-            d_blocks.Conv2x3x3NormAct(256, 128, shortcut=d_blocks.Conv1x1BnReLU(256, 128)),
+            d_blocks.BottleNeck(224, 224),
+            d_blocks.Conv2x3x3NormAct(224, 128, shortcut=d_blocks.Conv1x1BnReLU(224, 128)),
             d_blocks.ResidualAdd(
                 nn.Sequential(
                     d_blocks.ScaleUp(128, 2, 0, (4, 4)),
@@ -1570,7 +1563,77 @@ class HalfDGBaNConv17(torch.nn.Module):
     def forward(self, x):
         kl_sum = 0
 
+        x = torch.cat((x, x), dim=1)
+        x, kl = self.linear_1(x)
+        kl_sum += kl
+        x = F.relu(x)
+        
+        x, kl = self.linear_2(x)
+        kl_sum += kl
+        x = F.relu(x)
+        
+        x, kl = self.linear_3(x)
+        kl_sum += kl
+        x = F.relu(x)
+        
+        x, kl = self.linear_4(x)
+        kl_sum += kl
+        x = F.relu(x)
+        
+        x = x.view(x.size(0), 224, 2, 2)
+
+        x = self.conv_layers(x)
+        
+        return x.view(x.size(0), 1024), kl_sum
+
+
+
+class FullDGBaNConv17(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(FullDGBaNConv17, self).__init__()
+
+        self.linear_1 = BayesLinear(28, 56)
+        self.linear_2 = BayesLinear(56, 112)
+        self.linear_3 = BayesLinear(112, 224)
+        self.linear_4 = BayesLinear(224, 448)
+        self.linear_5 = BayesLinear(448, 896)
+        self.linear_6 = BayesLinear(896, 1792)
+
+        self.conv_layers = blocks.BayesSequential(
+            blocks.BottleNeck(448, 448, residual=blocks.ResidualAdd),
+            blocks.Conv2x3x3NormAct(448, 224, shortcut=blocks.Conv1x1BnReLU(448, 224), residual=blocks.ResidualAdd),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.ScaleUp(224, 224, 2, 0, 1),
+                    blocks.Conv3x3BnReLU(224, 224)
+                ),
+                blocks.ConvNormAct(224, 224, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(224, 112, shortcut=blocks.Conv1x1BnReLU(224, 112), residual=blocks.ResidualAdd),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.ScaleUp(112, 112, 2, 0, 1),
+                    blocks.Conv3x3BnReLU(112, 112)
+                ),
+                blocks.ConvNormAct(112, 112, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(112, 56, shortcut=blocks.Conv1x1BnReLU(112, 56), residual=blocks.ResidualAdd),
+            blocks.ResidualAdd(
+                blocks.BayesSequential(
+                    blocks.ScaleUp(56, 56, 2, 0, 1),
+                    blocks.Conv3x3BnReLU(56, 56)
+                ),
+                blocks.ConvNormAct(56, 56, 1, 2, 0, 1)
+            ),
+            blocks.Conv2x3x3NormAct(56, 28, shortcut=blocks.Conv1x1BnReLU(56, 28), residual=blocks.ResidualAdd),
+            blocks.LastConv(28, 5, 2, 2, 1)
+        )
+
+    def forward(self, x):
+        kl_sum = 0
+
         z = x.clone()
+        z_conv = x.view((x.size(0), x.size(1), 1, 1))
         
         z = torch.cat((z, z), dim=1)
         x, kl = self.linear_1(x)
@@ -1597,10 +1660,14 @@ class HalfDGBaNConv17(torch.nn.Module):
         kl_sum += kl
         x = F.relu(x * z)
         
-        x = F.relu(self.linear_6(x))
-
-        x = x.view(x.size(0), 256, 2, 2)
-
-        x = self.conv_layers(x)
+        z = torch.cat((z, z), dim=1)
+        x, kl = self.linear_6(x)
+        kl_sum += kl
+        x = F.relu(x * z)
         
-        return x.squeeze(dim=1).reshape(x.size(0), 1024), kl_sum
+        x = x.view(x.size(0), 448, 2, 2)
+
+        x, kl = self.conv_layers(x, z_conv)
+        kl_sum += kl
+        
+        return x.view(x.size(0), 1024), kl_sum
